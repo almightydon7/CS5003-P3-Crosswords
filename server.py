@@ -61,3 +61,5 @@ def InitiateServer():
                 }
 
         
+# CS5003-P3-Crosswords git init git add README.md git commit -m Add server script (240032527) git branch -M main git remote add origin https://github.com/almightydon7/CS5003-P3-Crosswords.git git push -u origin main
+# CS5003-P3-Crosswords git init git add server.py git commit -m Add server script (240032527) git branch -M main git remote add origin https://github.com/almightydon7/CS5003-P3-Crosswords.git git push -u origin main
