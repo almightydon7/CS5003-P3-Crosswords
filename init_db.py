@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import os
+import time
 
 # Ensure the database directory exists
 os.makedirs(os.path.dirname(os.path.abspath(__file__)), exist_ok=True)
@@ -14,11 +15,14 @@ cursor.execute('''
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL
+    password TEXT NOT NULL,
+    registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    puzzles_created INTEGER DEFAULT 0,
+    puzzles_solved INTEGER DEFAULT 0
 )
 ''')
 
-# Create crosswords table
+# Create crosswords table with enhanced structure
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS crosswords (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,15 +32,80 @@ CREATE TABLE IF NOT EXISTS crosswords (
     words TEXT NOT NULL,
     clues TEXT NOT NULL,
     lateralWords TEXT NOT NULL,
-    verticalWords TEXT NOT NULL
+    verticalWords TEXT NOT NULL,
+    creator_id INTEGER,
+    creation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    difficulty_level TEXT DEFAULT 'Medium',
+    times_solved INTEGER DEFAULT 0,
+    average_solve_time REAL DEFAULT 0,
+    validated BOOLEAN DEFAULT 1,
+    FOREIGN KEY (creator_id) REFERENCES users(id)
 )
 ''')
 
-# Create solutions table
+# Enhanced solutions table to track solving time
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS solutions (
     user_id INTEGER,
     puzzle_id INTEGER,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    solve_time REAL NOT NULL,
+    attempt_count INTEGER DEFAULT 1,
+    PRIMARY KEY (user_id, puzzle_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (puzzle_id) REFERENCES crosswords(id)
+)
+''')
+
+# Create leaderboard table for fastest solvers
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS leaderboards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    puzzle_id INTEGER,
+    user_id INTEGER,
+    solve_time REAL NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (puzzle_id) REFERENCES crosswords(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+)
+''')
+
+# Create puzzle_attempts table to track all attempts
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS puzzle_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    puzzle_id INTEGER,
+    start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    end_time TIMESTAMP,
+    duration REAL,
+    successful BOOLEAN DEFAULT 0,
+    progress TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (puzzle_id) REFERENCES crosswords(id)
+)
+''')
+
+# Create user_best_times table to store personal best times
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS user_best_times (
+    user_id INTEGER,
+    puzzle_id INTEGER,
+    best_time REAL NOT NULL,
+    timestamp DATETIME,
+    PRIMARY KEY (user_id, puzzle_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (puzzle_id) REFERENCES crosswords(id)
+)
+''')
+
+# Create puzzle_ratings table for user ratings
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS puzzle_ratings (
+    user_id INTEGER,
+    puzzle_id INTEGER,
+    rating INTEGER NOT NULL,
+    comment TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, puzzle_id),
     FOREIGN KEY (user_id) REFERENCES users(id),
@@ -70,7 +139,9 @@ sample_crosswords = [
         "verticalWords": json.dumps({
             "ARRAY": {"start": [0, 0], "end": [4, 0]},
             "CLASS": {"start": [0, 2], "end": [4, 2]}
-        })
+        }),
+        "difficulty_level": "Medium",
+        "average_solve_time": 180.0  # 3 minutes average
     },
     {
         "name": "Artificial Intelligence",
@@ -93,7 +164,9 @@ sample_crosswords = [
         "verticalWords": json.dumps({
             "GPT": {"start": [0, 0], "end": [2, 0]},
             "DNN": {"start": [1, 3], "end": [3, 3]}
-        })
+        }),
+        "difficulty_level": "Easy",
+        "average_solve_time": 120.0  # 2 minutes average
     },
     {
         "name": "St Andrews, Scotland",
@@ -120,7 +193,9 @@ sample_crosswords = [
         "verticalWords": json.dumps({
             "GOLFED": {"start": [0, 3], "end": [5, 3]},
             "SEA": {"start": [3, 5], "end": [5, 5]}
-        })
+        }),
+        "difficulty_level": "Hard",
+        "average_solve_time": 300.0  # 5 minutes average
     }
 ]
 
@@ -130,10 +205,31 @@ count = cursor.fetchone()[0]
 
 # Only add sample crosswords if there are none
 if count == 0:
+    # Add a test user first (for foreign key constraints)
+    cursor.execute('''
+    INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)
+    ''', ("admin", "admin123"))
+    
+    # Get the admin user ID
+    cursor.execute("SELECT id FROM users WHERE username = ?", ("admin",))
+    admin_id = cursor.fetchone()[0]
+
     for crossword in sample_crosswords:
+        # Insert the crossword
         cursor.execute('''
-        INSERT INTO crosswords (name, gridSize, visibleSquares, words, clues, lateralWords, verticalWords)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO crosswords (
+            name, 
+            gridSize, 
+            visibleSquares, 
+            words, 
+            clues, 
+            lateralWords, 
+            verticalWords,
+            creator_id,
+            difficulty_level,
+            average_solve_time
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             crossword["name"],
             crossword["gridSize"],
@@ -141,8 +237,74 @@ if count == 0:
             crossword["words"],
             crossword["clues"],
             crossword["lateralWords"],
-            crossword["verticalWords"]
+            crossword["verticalWords"],
+            admin_id,
+            crossword["difficulty_level"],
+            crossword["average_solve_time"]
         ))
+        
+        # Get the inserted crossword ID
+        crossword_id = cursor.lastrowid
+        
+        # Add some fake leaderboard data
+        for i in range(1, 6):  # Add 5 fake records
+            fake_user = f"user{i}"
+            
+            # Insert fake user if not exists
+            cursor.execute('''
+            INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)
+            ''', (fake_user, "password"))
+            
+            # Get user ID
+            cursor.execute("SELECT id FROM users WHERE username = ?", (fake_user,))
+            user_id = cursor.fetchone()[0]
+            
+            # Add to leaderboard with varying times
+            solve_time = crossword["average_solve_time"] * (0.8 + (i * 0.1))  # Vary times around average
+            
+            cursor.execute('''
+            INSERT INTO leaderboards (puzzle_id, user_id, solve_time)
+            VALUES (?, ?, ?)
+            ''', (crossword_id, user_id, solve_time))
+            
+            # Update user's personal best time
+            cursor.execute('''
+            INSERT INTO user_best_times (user_id, puzzle_id, best_time, timestamp)
+            VALUES (?, ?, ?, datetime('now'))
+            ''', (user_id, crossword_id, solve_time))
+            
+            # Add to solutions table
+            cursor.execute('''
+            INSERT OR IGNORE INTO solutions (user_id, puzzle_id, solve_time)
+            VALUES (?, ?, ?)
+            ''', (user_id, crossword_id, solve_time))
+            
+            # Add some puzzle ratings
+            rating = 5 - (i % 3)  # Ratings between 3-5
+            cursor.execute('''
+            INSERT INTO puzzle_ratings (user_id, puzzle_id, rating, comment)
+            VALUES (?, ?, ?, ?)
+            ''', (user_id, crossword_id, rating, f"Great puzzle! Solved in {solve_time:.1f} seconds."))
+            
+            # Update user's solved puzzles count
+            cursor.execute('''
+            UPDATE users SET puzzles_solved = puzzles_solved + 1 WHERE id = ?
+            ''', (user_id,))
+            
+        # Update the creator's created puzzles count
+        cursor.execute('''
+        UPDATE users SET puzzles_created = puzzles_created + 1 WHERE id = ?
+        ''', (admin_id,))
+        
+        # Update crossword times_solved count
+        cursor.execute('''
+        UPDATE crosswords SET times_solved = ? WHERE id = ?
+        ''', (5, crossword_id))
+
+# Insert test user if it doesn't exist
+cursor.execute('''
+INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)
+''', ("test", "test"))
 
 # Commit and close the connection
 conn.commit()
