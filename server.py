@@ -1,167 +1,283 @@
-import json
-import logging
-import time
-import uuid
+# server.py
 import socket
 import threading
+import json
 import sqlite3
+from database import init_db, get_db_connection
 
-HOST = '127.0.0.1'
-PORT = 9999
-SERVER_RUNNING = None
-lock = threading.Lock()
-
-#============================= ↓ api & db structure assumptions ↓ ===============================#
-
-client_to_server_actions = { 
+class CrosswordServer:
+    def __init__(self, host='localhost', port=8888):
+        self.host = host
+        self.port = port
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(5)
+        
+        # Initialize database
+        init_db()
+        
+        print(f"Server started, listening on port {self.port}...")
     
-    "action": "login",  # fields: username, password
-    "action": "register",  # fields: username, password
-    "action": "fetch_crossword",  # fields: crossword_id
-    "action": "submit_answer",  # fields: crossword_id, clue_id, answer
-    "action": "get_user_stats",  # fields: user_id
-    "action": "update_crossword",  # fields: crossword_id, updated_data
-    "action": "create_crossword",  # fields: name, gridSize, clues, words
-    "action": "get_crossword_list",  # fields: none
-
-}
-
-server_to_client_actions = { 
-    
-    "action": "login_successful",  # fields: message, user_id
-    "action": "login_unsuccessful",  # fields: message
-    "action": "registration_successful",  # fields: message
-    "action": "registration_unsuccessful",  # fields: message
-    "action": "crossword_fetched",  # fields: crossword_id, name, gridSize, clues, visibleSquares
-    "action": "crossword_not_found",  # fields: message
-    "action": "answer_successful",  # fields: message
-    "action": "answer_unsuccessful",  # fields: message
-    "action": "user_stats",  # fields: user_id, solved_puzzles, puzzles_posted, total_time
-    "action": "crossword_updated",  # fields: message, crossword_id
-    "action": "crossword_creation_successful",  # fields: message, crossword_id
-    "action": "crossword_creation_unsuccessful",  # fields: message
-    "action": "crossword_list",  # fields: crossword_list
-
-}
-
-DB_users_table = {
-    "connection": "",
-    "address": "",
-    "id": "",
-    "username": "",
-    "password": "",
-    "registered": None,
-    "stats": {}
-}
-
-DB_crosswords_table = {
-    "crossWordID": {
-        "name": "", # use as identifier
-        "gridSize": [],  # dynamic grid size
-        "visibleSquares": [], # squares with visible letters in the game
-        "words": [], # list of all words for easy retrieval
-        "clues": [], # list of clues / questions
-        "lateralWords": { 
-            "word": {
-                "start": (0, 0),
-                "end": (0, 0)
-            }
-        },
-        "verticalWords": {
-            "word": {
-                "start": (0, 0),
-                "end": (0, 0)
-            }
-        }
-    }
-}
-
-#==================================== ↓ server code ↓ ==========================================#
-
-def InitiateServer():
-
-    print(f"\nInitiating server to run on {HOST} : {PORT} ")
-
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-            server.bind((HOST, PORT))
-            server.listen()
-            print(f"\nServer running!  Host: {HOST}  Port: {PORT}")
-
-            while True:
-                connection, _ = server.accept()
-                threading.Thread(target=UserHandler, args=(connection,), daemon=True).start()
-
-    except Exception as e:
-        print(f"\nError starting the server: {e}")
-
-def UserHandler(connection):
-
-    # db setup
-    con = sqlite3.connect("nonExistent.db")
-    cur = con.cursor()
-
-    try:
+    def start(self):
+        """Start server and accept client connections"""
         while True:
-
-            data = connection.recv(1024).decode()
-            communication = json.loads(data)
-            action = communication.get("action")
-
-            if not data:
-                break
-
-            if action == "login":
-                username = communication['username']
-                password = communication['password']
-
-                with lock:
-
-                    # check db for user
-                    cur.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
-                    user_data = cur.fetchone()
-
-                    # check details match
-                    if user_data:
-                        response = {"action": "login_successful"}
-                    else:
-                        response = {"action": "login_unsuccessful"}
-                    connection.sendall(json.dumps(response).encode())
+            client_socket, address = self.server_socket.accept()
+            print(f"Accepted connection from {address}")
+            client_thread = threading.Thread(
+                target=self.handle_client,
+                args=(client_socket,)
+            )
+            client_thread.start()
+    
+    def handle_client(self, client_socket):
+        """Handle client connection"""
+        try:
+            while True:
+                data = client_socket.recv(4096).decode()
+                if not data:
+                    break
                     
-            if action == "fetch_crossword":
-                id = communication['id']
+                request = json.loads(data)
+                response = self.process_request(request)
+                client_socket.send(json.dumps(response).encode())
+                
+        except Exception as e:
+            print(f"Error handling client request: {str(e)}")
+        finally:
+            client_socket.close()
+    
+    def process_request(self, request):
+        """Process client request"""
+        action = request.get('action')
+        
+        if action == 'login':
+            return self.handle_login(request)
+        elif action == 'register':
+            return self.handle_register(request)
+        elif action == 'get_puzzles':
+            return self.handle_get_puzzles()
+        elif action == 'get_puzzle_detail':
+            return self.handle_get_puzzle_detail(request)
+        elif action == 'submit_solution':
+            return self.handle_submit_solution(request)
+        elif action == 'add_puzzle':
+            return self.handle_add_puzzle(request)
+        elif action == 'get_statistics':
+            return self.handle_get_statistics(request)
+        else:
+            return {'status': 'error', 'message': 'Unknown action type'}
+    
+    def handle_login(self, request):
+        """Handle login request"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            username = request['username']
+            password = request['password']
+            
+            cursor.execute(
+                "SELECT password FROM users WHERE username = ?",
+                (username,)
+            )
+            result = cursor.fetchone()
+            
+            if result is None:
+                # New user, auto register
+                cursor.execute(
+                    "INSERT INTO users (username, password) VALUES (?, ?)",
+                    (username, password)
+                )
+                conn.commit()
+                return {'status': 'ok', 'message': 'New user registered successfully'}
+            
+            if result[0] == password:
+                return {'status': 'ok', 'message': 'Login successful'}
+            else:
+                return {'status': 'error', 'message': 'Incorrect password'}
+                
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+        finally:
+            conn.close()
+    
+    def handle_get_puzzles(self):
+        """Get puzzle list"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute(
+                "SELECT id, title, author FROM puzzles ORDER BY id DESC"
+            )
+            puzzles = cursor.fetchall()
+            return {'status': 'ok', 'puzzles': puzzles}
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+        finally:
+            conn.close()
+    
+    def handle_get_puzzle_detail(self, request):
+        """Get puzzle details"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            puzzle_id = request['puzzle_id']
+            cursor.execute(
+                "SELECT grid, clues FROM puzzles WHERE id = ?",
+                (puzzle_id,)
+            )
+            result = cursor.fetchone()
+            
+            if result:
+                return {
+                    'status': 'ok',
+                    'grid': result[0],
+                    'clues': result[1]
+                }
+            else:
+                return {'status': 'error', 'message': 'Puzzle not found'}
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+        finally:
+            conn.close()
+    
+    def handle_submit_solution(self, request):
+        """Handle submitted answer"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            username = request['username']
+            puzzle_id = request['puzzle_id']
+            submitted_solution = json.loads(request['solution'])
+            
+            # Get correct answer
+            cursor.execute(
+                "SELECT answer FROM puzzles WHERE id = ?",
+                (puzzle_id,)
+            )
+            result = cursor.fetchone()
+            if not result:
+                return {'status': 'error', 'message': 'Puzzle not found'}
+            
+            correct_answer = json.loads(result[0])
+            
+            # Validate answer
+            is_correct = True
+            for i in range(len(correct_answer)):
+                for j in range(len(correct_answer[i])):
+                    if submitted_solution[i][j].upper() != correct_answer[i][j].upper():
+                        is_correct = False
+                        break
+                if not is_correct:
+                    break
+            
+            if is_correct:
+                # Update user's solved puzzles count
+                cursor.execute(
+                    "UPDATE users SET puzzles_solved = puzzles_solved + 1 WHERE username = ?",
+                    (username,)
+                )
+                
+                # Update puzzle solve count
+                cursor.execute(
+                    "UPDATE puzzles SET times_solved = times_solved + 1 WHERE id = ?",
+                    (puzzle_id,)
+                )
+                
+                conn.commit()
+                return {'status': 'ok', 'message': 'Correct answer!'}
+            else:
+                return {'status': 'error', 'message': 'Incorrect answer, please try again'}
+                
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+        finally:
+            conn.close()
+    
+    def handle_add_puzzle(self, request):
+        """Add new puzzle"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            title = request['title']
+            author = request['author']
+            grid = request['grid']
+            answer = request['answer']
+            clues = request['clues']
+            
+            cursor.execute(
+                """
+                INSERT INTO puzzles (title, author, grid, answer, clues)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (title, author, grid, answer, clues)
+            )
+            
+            # Update user's created puzzles count
+            cursor.execute(
+                "UPDATE users SET puzzles_created = puzzles_created + 1 WHERE username = ?",
+                (author,)
+            )
+            
+            conn.commit()
+            return {'status': 'ok', 'message': 'Puzzle added successfully'}
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+        finally:
+            conn.close()
 
-                with lock:
-
-                    # check db for crossword
-                    cur.execute("SELECT * FROM crosswords WHERE id = ?", (id))
-                    crossword_data = cur.fetchone()
-
-                    if crossword_data:
-                        response = {
-                            "action": "crossword_fetched",
-                            "crossword_id": crossword_data[0],  
-                            "name": crossword_data[1],  
-                            "gridSize": crossword_data[2],  
-                            "visibleSquares": crossword_data[3],  
-                            "words": crossword_data[4],  
-                            "clues": crossword_data[5],  
-                            "lateralWords": json.loads(crossword_data[6]), # format in json in db
-                            "verticalWords": json.loads(crossword_data[7]) # format in json in db
-                        }
-
-                    else:
-                        response = {"action": "failed_to_fetch_crossword"}
-
-                    connection.sendall(json.dumps(response).encode())
-
-    except Exception as e:
-        print(f"Error: {e}")
-
-    return
-
-#==============================================================================================#
+    def handle_get_statistics(self, request):
+        """Get statistics"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            username = request.get('username')
+            
+            # Get current user's statistics
+            cursor.execute("""
+                SELECT puzzles_solved, puzzles_created 
+                FROM users 
+                WHERE username = ?
+            """, (username,))
+            
+            user_row = cursor.fetchone()
+            current_user_stats = {
+                'puzzles_solved': user_row[0] if user_row else 0,
+                'puzzles_created': user_row[1] if user_row else 0
+            }
+            
+            # Get all users' statistics
+            cursor.execute("""
+                SELECT username, puzzles_solved, puzzles_created 
+                FROM users 
+                ORDER BY puzzles_solved DESC, puzzles_created DESC
+            """)
+            
+            all_users_stats = []
+            for row in cursor.fetchall():
+                user_stats = {
+                    'username': row[0],
+                    'puzzles_solved': row[1],
+                    'puzzles_created': row[2]
+                }
+                all_users_stats.append(user_stats)
+            
+            return {
+                'status': 'ok',
+                'current_user_stats': current_user_stats,
+                'all_users_stats': all_users_stats
+            }
+            
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+        finally:
+            conn.close()
 
 if __name__ == "__main__":
-
-    InitiateServer()
+    server = CrosswordServer()
+    server.start()
