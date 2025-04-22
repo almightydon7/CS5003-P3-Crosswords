@@ -23,8 +23,118 @@ class DatabaseManager:
     
     def _init_db(self):
         """Initialize the database if it doesn't exist"""
-        print(f"Database not found. Please run init_db.py first.")
-        raise Exception("Database not initialized")
+        # Create the database directory if it doesn't exist
+        os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
+        
+        print(f"Initializing database at {self.db_path}")
+        
+        # Import init_db script to run database setup
+        try:
+            import database.init_db
+            print("Database initialized successfully!")
+        except Exception as e:
+            print(f"Error initializing database: {str(e)}")
+            # Fallback to minimal database initialization if init_db.py fails
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Create basic tables needed for the application
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                puzzles_created INTEGER DEFAULT 0,
+                puzzles_solved INTEGER DEFAULT 0
+            )
+            ''')
+            
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS crosswords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                gridSize TEXT NOT NULL,
+                visibleSquares TEXT NOT NULL,
+                words TEXT NOT NULL,
+                clues TEXT NOT NULL,
+                lateralWords TEXT NOT NULL,
+                verticalWords TEXT NOT NULL,
+                creator_id INTEGER,
+                creation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                difficulty_level TEXT DEFAULT 'Medium',
+                times_solved INTEGER DEFAULT 0,
+                average_solve_time REAL DEFAULT 0,
+                validated BOOLEAN DEFAULT 1,
+                FOREIGN KEY (creator_id) REFERENCES users(id)
+            )
+            ''')
+            
+            # Create puzzles table (for compatibility with server.py)
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS puzzles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                author TEXT NOT NULL,
+                grid TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                clues TEXT NOT NULL,
+                times_solved INTEGER DEFAULT 0
+            )
+            ''')
+            
+            # Insert test user
+            cursor.execute('''
+            INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)
+            ''', ("admin", "admin123"))
+            
+            # Get the admin user ID
+            cursor.execute("SELECT id FROM users WHERE username = ?", ("admin",))
+            admin_id = cursor.fetchone()[0]
+            
+            # Add a simple crossword
+            simple_crossword = {
+                "name": "Computer Science",
+                "gridSize": json.dumps([5, 5]),
+                "visibleSquares": json.dumps([[0, 0], [0, 2], [0, 4], 
+                                             [2, 0], [2, 1], [2, 2], [2, 3], [2, 4],
+                                             [4, 0], [4, 2], [4, 4]]),
+                "words": json.dumps(["CODE", "PYTHON", "DATA"]),
+                "clues": json.dumps([
+                    {"id": 1, "text": "What programmers write", "direction": "across", "position": [0, 0], "answer": "CODE"},
+                    {"id": 2, "text": "Popular programming language", "direction": "down", "position": [2, 0], "answer": "PYTHON"},
+                    {"id": 3, "text": "Information processed by computers", "direction": "across", "position": [4, 0], "answer": "DATA"}
+                ]),
+                "lateralWords": json.dumps({
+                    "CODE": {"start": [0, 0], "end": [0, 4]},
+                    "DATA": {"start": [4, 0], "end": [4, 4]}
+                }),
+                "verticalWords": json.dumps({
+                    "PYTHON": {"start": [0, 2], "end": [4, 2]}
+                })
+            }
+            
+            cursor.execute('''
+            INSERT INTO crosswords (
+                name, gridSize, visibleSquares, words, clues, lateralWords, verticalWords, creator_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                simple_crossword["name"],
+                simple_crossword["gridSize"],
+                simple_crossword["visibleSquares"],
+                simple_crossword["words"],
+                simple_crossword["clues"],
+                simple_crossword["lateralWords"],
+                simple_crossword["verticalWords"],
+                admin_id
+            ))
+            
+            # Add sample puzzles for server.py
+            from database import add_sample_puzzles
+            add_sample_puzzles(cursor)
+            
+            conn.commit()
+            conn.close()
     
     # ======= User Management =======
     
@@ -619,4 +729,4 @@ class DatabaseManager:
                 "count": len(ratings)
             }
         finally:
-            conn.close() 
+            conn.close()
