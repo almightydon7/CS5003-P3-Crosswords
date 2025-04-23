@@ -34,6 +34,19 @@ def init_db():
         )
     """)
     
+    # Create puzzle_records table to track time taken per solve
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS puzzle_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            puzzle_id INTEGER NOT NULL,
+            time_taken INTEGER NOT NULL,
+            solved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (username) REFERENCES users (username),
+            FOREIGN KEY (puzzle_id) REFERENCES puzzles (id)
+        )
+    """)
+
     # Add sample puzzles if none exist
     cursor.execute("SELECT COUNT(*) FROM puzzles")
     if cursor.fetchone()[0] == 0:

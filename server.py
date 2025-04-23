@@ -176,6 +176,9 @@ class CrosswordServer:
             
             if is_correct:
                 # Update user's solved puzzles count
+
+                time_taken = request.get('time_taken', None)
+
                 cursor.execute(
                     "UPDATE users SET puzzles_solved = puzzles_solved + 1 WHERE username = ?",
                     (username,)
@@ -187,6 +190,12 @@ class CrosswordServer:
                     (puzzle_id,)
                 )
                 
+                if time_taken is not None:
+                    cursor.execute(
+                        "INSERT INTO puzzle_records (username, puzzle_id, time_taken) VALUES (?, ?, ?)",
+                        (username, puzzle_id, time_taken)
+                    )
+
                 conn.commit()
                 return {'status': 'ok', 'message': 'Correct answer!'}
             else:
@@ -250,19 +259,48 @@ class CrosswordServer:
                 'puzzles_solved': user_row[0] if user_row else 0,
                 'puzzles_created': user_row[1] if user_row else 0
             }
-            
+
+            cursor.execute("""
+                SELECT time_taken FROM puzzle_records 
+                WHERE username = ? 
+                ORDER BY solved_at DESC 
+                LIMIT 1
+            """, (username,))
+            latest_time_row = cursor.fetchone()
+            current_user_stats['latest_time'] = latest_time_row[0] if latest_time_row else None
+
             # Get all users' statistics
             cursor.execute("""
                 SELECT username, puzzles_solved, puzzles_created 
                 FROM users 
                 ORDER BY puzzles_solved DESC, puzzles_created DESC
             """)
-            
+            user_rows = cursor.fetchall()
+
+            cursor.execute("""
+                SELECT username, MIN(time_taken) 
+                FROM puzzle_records 
+                GROUP BY username
+            """)
+            fastest_times = dict(cursor.fetchall())
+
+            cursor.execute("""
+                SELECT username, AVG(time_taken)
+                FROM puzzle_records
+                GROUP BY username
+            """)
+            average_times = dict(cursor.fetchall())
+
             all_users_stats = []
-            for row in cursor.fetchall():
+            for row in user_rows:
+                fastest = fastest_times.get(row[0])
+                average = average_times.get(row[0])
+
                 user_stats = {
                     'username': row[0],
                     'puzzles_solved': row[1],
+                    'fastest_time': round(fastest, 2) if fastest is not None else "N/A",
+                    'average_time': round(average, 2) if average is not None else "N/A",
                     'puzzles_created': row[2]
                 }
                 all_users_stats.append(user_stats)

@@ -1,5 +1,6 @@
 import socket
 import json
+import time
 import tkinter as tk
 from tkinter import messagebox
 
@@ -190,6 +191,9 @@ class CrosswordClient:
     
     def show_puzzle(self, puzzle_id):
         """Display puzzle"""
+        
+        self.start_time = time.time()
+
         try:
             self.sock.send(json.dumps({
                 'action': 'get_puzzle_detail',
@@ -317,9 +321,22 @@ class CrosswordClient:
             
         except Exception as e:
             messagebox.showerror("Error", f"Network error: {str(e)}")
+
+        self.timer_label = tk.Label(button_frame, text="Time: 0s", font=("Helvetica", 12), bg='white', fg='black')
+        self.timer_label.pack(side="left", padx=10)
+        self.update_timer()
+
+    def update_timer(self):
+        if hasattr(self, 'start_time'):
+            elapsed = int(time.time() - self.start_time)
+            self.timer_label.config(text=f"Time: {elapsed}s")
+            self.root.after(1000, self.update_timer)
     
     def submit_solution(self, puzzle_id):
         """Submit answer"""
+
+        elapsed_time = int(time.time() - self.start_time)
+
         try:
             # Collect answer
             solution = []
@@ -337,7 +354,8 @@ class CrosswordClient:
                 'action': 'submit_solution',
                 'username': self.current_user,
                 'puzzle_id': puzzle_id,
-                'solution': json.dumps(solution)
+                'solution': json.dumps(solution),
+                'time_taken': elapsed_time
             }).encode())
             
             response = json.loads(self.sock.recv(4096).decode())
@@ -601,6 +619,17 @@ C_T        CAT
                 justify=tk.LEFT
             ).pack(anchor='w', padx=20)
             
+            latest_time = current_stats.get('latest_time')
+            if latest_time is not None:
+                tk.Label(
+                    current_user_frame,
+                    text=f"Time Spent on Last Puzzle: {latest_time} seconds",
+                    font=("Helvetica", 12),
+                    bg='white',
+                    fg='black',
+                    justify=tk.LEFT
+                ).pack(anchor='w', padx=20, pady=5)
+
             # Display leaderboard
             tk.Label(
                 scrollable_frame,
@@ -613,7 +642,7 @@ C_T        CAT
             # Create table headers
             headers_frame = tk.Frame(scrollable_frame, bg='white')
             headers_frame.pack(fill="x", padx=20)
-            
+
             tk.Label(
                 headers_frame,
                 text="Username",
@@ -634,6 +663,24 @@ C_T        CAT
             
             tk.Label(
                 headers_frame,
+                text="Fastest Time (s)",
+                font=("Helvetica", 12, "bold"),
+                width=15,
+                bg='white',
+                fg='black'
+            ).pack(side="left")
+
+            tk.Label(
+                headers_frame,
+                text="Average Time (s)",
+                font=("Helvetica", 12, "bold"),
+                width=15,
+                bg='white',
+                fg='black'
+            ).pack(side="left")
+
+            tk.Label(
+                headers_frame,
                 text="Puzzles Created",
                 font=("Helvetica", 12, "bold"),
                 width=15,
@@ -645,7 +692,7 @@ C_T        CAT
             for user_stats in response['all_users_stats']:
                 user_frame = tk.Frame(scrollable_frame, bg='white')
                 user_frame.pack(fill="x", padx=20)
-                
+
                 tk.Label(
                     user_frame,
                     text=user_stats['username'],
@@ -664,6 +711,24 @@ C_T        CAT
                     fg='black'
                 ).pack(side="left")
                 
+                tk.Label(
+                    user_frame,
+                    text=str(user_stats.get('fastest_time', 'N/A')),
+                    font=("Helvetica", 12),
+                    width=15,
+                    bg='white',
+                    fg='black'
+                ).pack(side="left")
+
+                tk.Label(
+                    user_frame,
+                    text=str(user_stats.get('average_time', 'N/A')),
+                    font=("Helvetica", 12),
+                    width=15,
+                    bg='white',
+                    fg='black'
+                ).pack(side="left")
+
                 tk.Label(
                     user_frame,
                     text=str(user_stats['puzzles_created']),
