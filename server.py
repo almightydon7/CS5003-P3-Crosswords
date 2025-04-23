@@ -33,39 +33,131 @@ class CrosswordServer:
         """Handle client connection"""
         try:
             while True:
-                data = client_socket.recv(4096).decode()
-                if not data:
-                    break
+                # Initialize buffer for data collection
+                data_buffer = b""
+                
+                while True:
+                    chunk = client_socket.recv(4096)
+                    if not chunk:
+                        return
                     
-                request = json.loads(data)
-                response = self.process_request(request)
-                client_socket.send(json.dumps(response).encode())
+                    data_buffer += chunk
+                    
+                    try:
+                        # Try to decode and parse the accumulated data
+                        request = json.loads(data_buffer.decode())
+                        break  # Successfully parsed JSON
+                    except json.JSONDecodeError as e:
+                        if "Unterminated string" not in str(e):
+                            # If it's not an unterminated string, it's a real error
+                            print(f"JSON Decode Error: {str(e)}")
+                            print(f"Received data: {data_buffer.decode()}")
+                            # Send error response
+                            error_response = json.dumps({
+                                'status': 'error',
+                                'message': f'Invalid JSON format: {str(e)}'
+                            })
+                            client_socket.send(error_response.encode())
+                            continue
+                        # If it's an unterminated string, continue receiving data
+                        continue
+                
+                if not data_buffer:
+                    break
+                
+                print("\n=== Debug: Processing client request ===")
+                print(f"Received data length: {len(data_buffer)}")
+                print(f"Request: {request}")
+                
+                # Process the request
+                try:
+                    response = self.process_request(request)
+                    
+                    # Ensure response is properly formatted
+                    if not isinstance(response, dict):
+                        response = {
+                            'status': 'error',
+                            'message': 'Invalid server response format'
+                        }
+                    
+                    # Convert response to JSON string
+                    response_json = json.dumps(response)
+                    
+                    print("\nSending response:")
+                    print(f"Response length: {len(response_json)}")
+                    print(f"Response preview: {response_json[:200]}...")
+                    
+                    # Send response
+                    client_socket.send(response_json.encode())
+                    
+                except Exception as e:
+                    print(f"Error processing request: {str(e)}")
+                    print("Full error:")
+                    import traceback
+                    traceback.print_exc()
+                    
+                    error_response = json.dumps({
+                        'status': 'error',
+                        'message': f'Server error: {str(e)}'
+                    })
+                    client_socket.send(error_response.encode())
                 
         except Exception as e:
-            print(f"Error handling client request: {str(e)}")
+            print(f"Connection error: {str(e)}")
+            print("Full error:")
+            import traceback
+            traceback.print_exc()
         finally:
             client_socket.close()
     
     def process_request(self, request):
         """Process client request"""
-        action = request.get('action')
-        
-        if action == 'login':
-            return self.handle_login(request)
-        elif action == 'register':
-            return self.handle_register(request)
-        elif action == 'get_puzzles':
-            return self.handle_get_puzzles()
-        elif action == 'get_puzzle_detail':
-            return self.handle_get_puzzle_detail(request)
-        elif action == 'submit_solution':
-            return self.handle_submit_solution(request)
-        elif action == 'add_puzzle':
-            return self.handle_add_puzzle(request)
-        elif action == 'get_statistics':
-            return self.handle_get_statistics(request)
-        else:
-            return {'status': 'error', 'message': 'Unknown action type'}
+        try:
+            action = request.get('action')
+            
+            if action == 'login':
+                return self.handle_login(request)
+            elif action == 'register':
+                return self.handle_register(request)
+            elif action == 'get_puzzles':
+                return self.handle_get_puzzles()
+            elif action == 'get_puzzle_detail':
+                return self.handle_get_puzzle_detail(request)
+            elif action == 'submit_solution':
+                return self.handle_submit_solution(request)
+            elif action == 'add_puzzle':
+                # 预处理 JSON 数据
+                if 'grid' in request:
+                    try:
+                        if isinstance(request['grid'], str):
+                            json.loads(request['grid'])  # 验证 JSON 字符串
+                    except json.JSONDecodeError:
+                        request['grid'] = json.dumps(request['grid'])
+                
+                if 'answer' in request:
+                    try:
+                        if isinstance(request['answer'], str):
+                            json.loads(request['answer'])
+                    except json.JSONDecodeError:
+                        request['answer'] = json.dumps(request['answer'])
+                
+                if 'clues' in request:
+                    try:
+                        if isinstance(request['clues'], str):
+                            json.loads(request['clues'])
+                    except json.JSONDecodeError:
+                        request['clues'] = json.dumps(request['clues'])
+                
+                return self.handle_add_puzzle(request)
+            elif action == 'get_statistics':
+                return self.handle_get_statistics(request)
+            else:
+                return {'status': 'error', 'message': 'Unknown action type'}
+        except Exception as e:
+            print(f"Error processing request: {str(e)}")
+            print("Full error:")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
     
     def handle_login(self, request):
         """Handle login request"""
@@ -124,21 +216,55 @@ class CrosswordServer:
         
         try:
             puzzle_id = request['puzzle_id']
+            print(f"\n=== Debug: Getting puzzle details for ID {puzzle_id} ===")
+            
             cursor.execute(
                 "SELECT grid, clues FROM puzzles WHERE id = ?",
                 (puzzle_id,)
             )
             result = cursor.fetchone()
-            
+
             if result:
-                return {
-                    'status': 'ok',
-                    'grid': result[0],
-                    'clues': result[1]
-                }
+                try:
+                    raw_grid = result[0]
+                    raw_clues = result[1]
+                    
+                    print("Raw data from database:")
+                    print(f"Grid: {raw_grid[:100]}...")
+                    print(f"Clues: {raw_clues[:100]}...")
+                    
+                    # Ensure grid is valid JSON
+                    if isinstance(raw_grid, str):
+                        grid = json.loads(raw_grid)
+                    else:
+                        grid = raw_grid
+                        
+                    # Ensure clues is valid JSON
+                    if isinstance(raw_clues, str):
+                        clues = json.loads(raw_clues)
+                    else:
+                        clues = raw_clues
+
+                    response = {
+                        'status': 'ok',
+                        'grid': grid,
+                        'clues': clues
+                    }
+                    
+                    print("\nProcessed response:")
+                    print(json.dumps(response, indent=2)[:200] + "...")
+                    
+                    return response
+                except json.JSONDecodeError as e:
+                    print(f"JSON Decode Error: {str(e)}")
+                    return {'status': 'error', 'message': f'Invalid puzzle data format: {str(e)}'}
             else:
                 return {'status': 'error', 'message': 'Puzzle not found'}
         except Exception as e:
+            print(f"Error in handle_get_puzzle_detail: {str(e)}")
+            print("Full error:")
+            import traceback
+            traceback.print_exc()
             return {'status': 'error', 'message': str(e)}
         finally:
             conn.close()
@@ -205,19 +331,47 @@ class CrosswordServer:
             return {'status': 'error', 'message': str(e)}
         finally:
             conn.close()
-    
+
     def handle_add_puzzle(self, request):
-        """Add new puzzle"""
         conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
+            print("\n=== Debug: Processing add puzzle request ===")
+            print(f"Raw request data: {request}")
+            
             title = request['title']
             author = request['author']
             grid = request['grid']
             answer = request['answer']
             clues = request['clues']
-            
+
+            print(f"Title: {title}")
+            print(f"Author: {author}")
+            print(f"Grid type: {type(grid)}")
+            print(f"Answer type: {type(answer)}")
+            print(f"Clues type: {type(clues)}")
+
+            # Ensure they are all stringified JSON
+            try:
+                # First try to parse if they're JSON strings
+                json.loads(grid)
+                json.loads(answer)
+                json.loads(clues)
+            except json.JSONDecodeError:
+                # If they're not already JSON strings, convert them
+                if not isinstance(grid, str):
+                    grid = json.dumps(grid)
+                if not isinstance(answer, str):
+                    answer = json.dumps(answer)
+                if not isinstance(clues, str):
+                    clues = json.dumps(clues)
+
+            print("\nValidated data:")
+            print(f"Grid: {grid[:100]}...")
+            print(f"Answer: {answer[:100]}...")
+            print(f"Clues: {clues[:100]}...")
+
             cursor.execute(
                 """
                 INSERT INTO puzzles (title, author, grid, answer, clues)
@@ -226,15 +380,19 @@ class CrosswordServer:
                 (title, author, grid, answer, clues)
             )
             
-            # Update user's created puzzles count
             cursor.execute(
                 "UPDATE users SET puzzles_created = puzzles_created + 1 WHERE username = ?",
                 (author,)
             )
             
             conn.commit()
+            print("\nSuccessfully added puzzle to database")
             return {'status': 'ok', 'message': 'Puzzle added successfully'}
         except Exception as e:
+            print(f"\nError in handle_add_puzzle: {str(e)}")
+            print("Full error:")
+            import traceback
+            traceback.print_exc()
             return {'status': 'error', 'message': str(e)}
         finally:
             conn.close()

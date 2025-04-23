@@ -55,25 +55,37 @@ def init_db():
                 'title': 'Simple Crossword 1',
                 'author': 'system',
                 'grid': json.dumps([
-                    ['T', '_', 'P'],
-                    ['_', 'R', '_'],
-                    ['P', '_', 'N']
+                    [
+                        {"char": "T", "is_black": False},
+                        {"char": "", "is_black": False},
+                        {"char": "P", "is_black": False}
+                    ],
+                    [
+                        {"char": "", "is_black": False},
+                        {"char": "R", "is_black": False},
+                        {"char": "", "is_black": False}
+                    ],
+                    [
+                        {"char": "P", "is_black": False},
+                        {"char": "", "is_black": False},
+                        {"char": "N", "is_black": False}
+                    ]
                 ]),
                 'answer': json.dumps([
-                    ['T', 'O', 'P'],
-                    ['A', 'R', 'E'],
-                    ['P', 'E', 'N']
+                    ["T", "O", "P"],
+                    ["A", "R", "E"],
+                    ["P", "E", "N"]
                 ]),
                 'clues': json.dumps({
                     'across': [
-                        '1. The highest point or part.',
-                        '2. Used with you, we, or they',
-                        '3. A writing instrument'
+                        {"number": 1, "text": "The highest point or part"},
+                        {"number": 2, "text": "Used with you, we, or they"},
+                        {"number": 3, "text": "A writing instrument"}
                     ],
                     'down': [
-                        '1. To lightly touch',
-                        '2. Natural rock with metal',
-                        '3. A writing instrument'
+                        {"number": 1, "text": "To lightly touch"},
+                        {"number": 2, "text": "Natural rock with metal"},
+                        {"number": 3, "text": "A writing instrument"}
                     ]
                 })
             },
@@ -81,25 +93,37 @@ def init_db():
                 'title': 'Simple Crossword 2',
                 'author': 'system',
                 'grid': json.dumps([
-                    ['F', '_', 'N'],
-                    ['_', 'R', '_'],
-                    ['N', '_', 'T']
+                    [
+                        {"char": "F", "is_black": False},
+                        {"char": "", "is_black": False},
+                        {"char": "N", "is_black": False}
+                    ],
+                    [
+                        {"char": "", "is_black": False},
+                        {"char": "R", "is_black": False},
+                        {"char": "", "is_black": False}
+                    ],
+                    [
+                        {"char": "N", "is_black": False},
+                        {"char": "", "is_black": False},
+                        {"char": "T", "is_black": False}
+                    ]
                 ]),
                 'answer': json.dumps([
-                    ['F', 'A', 'N'],
-                    ['A', 'R', 'E'],
-                    ['N', 'E', 'T']
+                    ["F", "A", "N"],
+                    ["A", "R", "E"],
+                    ["N", "E", "T"]
                 ]),
                 'clues': json.dumps({
                     'across': [
-                        '1. Someone who supports a person/team',
-                        '2. Present tense of “to be',
-                        '3. A mesh used for catching fish'
+                        {"number": 1, "text": "A device that moves air"},
+                        {"number": 2, "text": "Present tense of 'to be'"},
+                        {"number": 3, "text": "A mesh used for catching fish"}
                     ],
                     'down': [
-                        '1. Someone who supports a person/team',
-                        '2. Present tense of “to be',
-                        '3. A mesh used for catching fish'
+                        {"number": 1, "text": "Someone who supports a person/team"},
+                        {"number": 2, "text": "A negative word"},
+                        {"number": 3, "text": "Clean and tidy"}
                     ]
                 })
             }
