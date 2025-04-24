@@ -152,17 +152,21 @@ class CrosswordServer:
             elif action == 'get_statistics':
                 return self.handle_get_statistics(request)
             elif action == 'add_friend':
-                return self.handle_add_friend(request)  # 添加好友
+                return self.handle_add_friend(request)
             elif action == 'confirm_friend':
-                return self.handle_confirm_friend(request)  # 确认好友
+                return self.handle_confirm_friend(request)
             elif action == 'send_message':
-                return self.handle_send_message(request)  # 发送消息
+                return self.handle_send_message(request)
             elif action == 'get_messages':
-                return self.handle_get_messages(request)  # 获取消息
+                return self.handle_get_messages(request)
             elif action == 'get_friend_requests':
-                return self.handle_get_friends(request)  # 确保处理好友列表请求
-
+                return self.handle_get_friend_requests(request)
+            elif action == 'get_friends':
+                return self.handle_get_friends(request)
+            elif action == 'reject_friend':
+                return self.handle_reject_friend(request)
             else:
+                print(f"Debug: Unknown action type received: {action}")
                 return {'status': 'error', 'message': 'Unknown action type'}
             
         except Exception as e:
@@ -686,6 +690,8 @@ class CrosswordServer:
             user_id = request['user_id']
             friend_id = request['friend_id']
 
+            print(f"\nDebug: Processing friend request from {user_id} to {friend_id}")
+
             if not user_id or not friend_id:
                 return {'status': 'error', 'message': 'Both user_id and friend_id are required'}
 
@@ -704,50 +710,52 @@ class CrosswordServer:
             if not friend:
                 return {'status': 'error', 'message': 'Friend does not exist'}
 
+            # Check if friend request already exists
+            cursor.execute(
+                "SELECT status FROM friends WHERE user_id = ? AND friend_id = ?",
+                (user_id, friend_id)
+            )
+            existing = cursor.fetchone()
+            
+            if existing:
+                print(f"Debug: Existing friend request found with status: {existing[0]}")
+                if existing[0] == 'pending':
+                    return {'status': 'error', 'message': 'Friend request already sent'}
+                elif existing[0] == 'confirmed':
+                    return {'status': 'error', 'message': 'Already friends'}
+
             # Add the friend request to the database
             cursor.execute(
-                "INSERT OR IGNORE INTO friends (user_id, friend_id, status) VALUES (?, ?, 'pending')",
+                "INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, 'pending')",
                 (user_id, friend_id)
             )
             conn.commit()
+            
             # Debug log to confirm data insertion
             print(f"Debug: Friend request added - {user_id} -> {friend_id}, status: pending")
+            
+            # Verify the insertion
+            cursor.execute(
+                "SELECT * FROM friends WHERE user_id = ? AND friend_id = ?",
+                (user_id, friend_id)
+            )
+            result = cursor.fetchone()
+            print(f"Debug: Verification - Friend request in database: {result}")
                   
             conn.close()
 
             return {'status': 'ok', 'message': 'Friend request sent'}
         except Exception as e:
+            print(f"Debug: Error in handle_add_friend: {str(e)}")
             return {'status': 'error', 'message': str(e)}
-
-    def add_friend(self, request):
-        """Handle adding a friend (send friend request)"""
-        try:
-            user_id = request['user_id']
-            friend_id = request['friend_id']
-
-            if not user_id or not friend_id:
-                return {'status': 'error', 'message': 'Both user_id and friend_id are required'}
-
-            # Add friend request to the database (status can be 'pending' initially)
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT OR IGNORE INTO friends (user_id, friend_id, status) VALUES (?, ?, 'pending')",
-                (user_id, friend_id)
-            )
-            conn.commit()
-            conn.close()
-
-            return {'status': 'ok', 'message': 'Friend request sent'}
-        except Exception as e:
-            return {'status': 'error', 'message': str(e)}
-
 
     def handle_confirm_friend(self, request):
         """Handle confirming a friend request"""
         try:
-            user_id = request['user_id']
-            friend_id = request['friend_id']
+            user_id = request['user_id']  # B
+            friend_id = request['friend_id']  # A
+
+            print(f"\nDebug: Confirming friend request between {user_id} and {friend_id}")
 
             if not user_id or not friend_id:
                 return {'status': 'error', 'message': 'Both user_id and friend_id are required'}
@@ -756,15 +764,47 @@ class CrosswordServer:
             conn = get_db_connection()
             cursor = conn.cursor()
             
+            # First, verify that there is a pending friend request
+            cursor.execute(
+                "SELECT * FROM friends WHERE user_id = ? AND friend_id = ? AND status = 'pending'",
+                (friend_id, user_id)  # A -> B (original request)
+            )
+            pending_request = cursor.fetchone()
+            
+            if not pending_request:
+                conn.close()
+                return {'status': 'error', 'message': 'No pending friend request found'}
+            
+            # Update the original friend request (A -> B)
             cursor.execute(
                 "UPDATE friends SET status = 'confirmed' WHERE user_id = ? AND friend_id = ?",
-                (user_id, friend_id)
+                (friend_id, user_id)  # A -> B
             )
+            
+            # Add the reverse friendship (B -> A)
+            cursor.execute(
+                "INSERT OR REPLACE INTO friends (user_id, friend_id, status) VALUES (?, ?, 'confirmed')",
+                (user_id, friend_id)  # B -> A
+            )
+            
             conn.commit()
+            
+            # Debug: Verify the friendship status
+            cursor.execute("""
+                SELECT user_id, friend_id, status 
+                FROM friends 
+                WHERE (user_id = ? AND friend_id = ?) 
+                   OR (user_id = ? AND friend_id = ?)
+            """, (user_id, friend_id, friend_id, user_id))
+            
+            friendship_records = cursor.fetchall()
+            print(f"Debug: Friendship records after confirmation: {friendship_records}")
+            
             conn.close()
 
             return {'status': 'ok', 'message': f'{friend_id} confirmed as a friend of {user_id}'}
         except Exception as e:
+            print(f"Debug: Error in handle_confirm_friend: {str(e)}")
             return {'status': 'error', 'message': str(e)}
         
     def handle_get_friends(self, request):
@@ -772,30 +812,52 @@ class CrosswordServer:
         try:
             user_id = request['user_id']
 
+            print(f"\nDebug: Fetching friends list for user {user_id}")
+
             if not user_id:
                 return {'status': 'error', 'message': 'user_id is required'}
 
             # Fetch the friends from the database
             conn = get_db_connection()
             cursor = conn.cursor()
+            
+            # Get friends in both directions (where user is either user_id or friend_id)
+            # Use DISTINCT to prevent duplicates
             cursor.execute("""
-                SELECT friend_id FROM friends
-                WHERE user_id = ? AND status = 'confirmed'
-            """, (user_id,))
+                SELECT DISTINCT
+                    CASE 
+                        WHEN user_id = ? THEN friend_id 
+                        WHEN friend_id = ? THEN user_id 
+                    END as friend
+                FROM friends 
+                WHERE (user_id = ? OR friend_id = ?) 
+                AND status = 'confirmed'
+            """, (user_id, user_id, user_id, user_id))
+            
             friends = cursor.fetchall()
+            
+            # Debug log
+            print(f"Debug: Found friends for {user_id}: {friends}")
+            
             conn.close()
 
-            # Extract friend usernames from query results
-            friend_list = [friend[0] for friend in friends]
+            # Extract friend usernames from query results and remove duplicates using set
+            friend_list = list(set([friend[0] for friend in friends if friend[0] is not None]))
+            
+            # Debug log
+            print(f"Debug: Processed friend list: {friend_list}")
 
             return {'status': 'ok', 'friends': friend_list}
         except Exception as e:
+            print(f"Debug: Error in handle_get_friends: {str(e)}")
             return {'status': 'error', 'message': str(e)}
-        
+
     def handle_get_friend_requests(self, request):
         """Handle fetching all pending friend requests for a user"""
         try:
             user_id = request['user_id']
+
+            print(f"\nDebug: Fetching friend requests for user {user_id}")
 
             if not user_id:
                 return {'status': 'error', 'message': 'user_id is required'}
@@ -803,15 +865,22 @@ class CrosswordServer:
             # Retrieve pending friend requests for the user
             conn = get_db_connection()
             cursor = conn.cursor()
+            
+            # Debug: Show all friend records for this user
+            cursor.execute("SELECT * FROM friends WHERE friend_id = ?", (user_id,))
+            all_records = cursor.fetchall()
+            print(f"Debug: All friend records for {user_id}: {all_records}")
+            
             cursor.execute(
                 "SELECT user_id, friend_id FROM friends WHERE friend_id = ? AND status = 'pending'",
                 (user_id,)
             )
             pending_requests = cursor.fetchall()
-            conn.close()
             
             # Debug log to show the pending requests
             print(f"Debug: Retrieved pending friend requests for {user_id}: {pending_requests}")
+
+            conn.close()
 
             # Return the pending friend requests
             return {
@@ -819,29 +888,7 @@ class CrosswordServer:
                 'pending_requests': [{'user_id': req[0], 'friend_id': req[1]} for req in pending_requests]
             }
         except Exception as e:
-            return {'status': 'error', 'message': str(e)}
-
-    def handle_reject_friend(self, request):
-        """Handle rejecting a friend request"""
-        try:
-            user_id = request['user_id']
-            friend_id = request['friend_id']
-
-            if not user_id or not friend_id:
-                return {'status': 'error', 'message': 'Both user_id and friend_id are required'}
-
-            # Remove the friend request from the database
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "DELETE FROM friends WHERE user_id = ? AND friend_id = ? AND status = 'pending'",
-                (friend_id, user_id)
-            )
-            conn.commit()
-            conn.close()
-
-            return {'status': 'ok', 'message': f'{friend_id} rejected as a friend'}
-        except Exception as e:
+            print(f"Debug: Error in handle_get_friend_requests: {str(e)}")
             return {'status': 'error', 'message': str(e)}
 
     def handle_get_messages(self, request):
@@ -850,20 +897,40 @@ class CrosswordServer:
             user_id = request['user_id']
             friend_id = request['friend_id']
 
+            print(f"\nDebug: Fetching messages between {user_id} and {friend_id}")
+
             if not user_id or not friend_id:
                 return {'status': 'error', 'message': 'Both user_id and friend_id are required'}
 
-            # Retrieve messages between user_id and friend_id
+            # Check if they are friends
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            cursor.execute(
-                "SELECT sender_id, receiver_id, message, timestamp FROM messages "
-                "WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?) "
-                "ORDER BY timestamp",
-                (user_id, friend_id, friend_id, user_id)
-            )
+            cursor.execute("""
+                SELECT * FROM friends 
+                WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))
+                AND status = 'confirmed'
+            """, (user_id, friend_id, friend_id, user_id))
+            
+            friendship = cursor.fetchone()
+            
+            if not friendship:
+                conn.close()
+                return {'status': 'error', 'message': 'You can only view messages with your friends'}
+
+            # Retrieve messages between user_id and friend_id
+            # Use DISTINCT to prevent duplicates and order by timestamp
+            cursor.execute("""
+                SELECT DISTINCT sender_id, receiver_id, message, timestamp 
+                FROM messages 
+                WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?) 
+                ORDER BY timestamp
+            """, (user_id, friend_id, friend_id, user_id))
+            
             messages = cursor.fetchall()
+            
+            print(f"Debug: Found {len(messages)} messages")
+            
             conn.close()
 
             # Return the messages
@@ -872,6 +939,7 @@ class CrosswordServer:
                 'messages': [{'sender_id': msg[0], 'receiver_id': msg[1], 'message': msg[2], 'timestamp': msg[3]} for msg in messages]
             }
         except Exception as e:
+            print(f"Debug: Error in handle_get_messages: {str(e)}")
             return {'status': 'error', 'message': str(e)}
 
 if __name__ == "__main__":

@@ -133,7 +133,7 @@ class CrosswordClient:
         # Social button
         tk.Button(
             self.root,
-            text="Social",
+            text="Social Menu",
             command=self.show_social_menu,
             font=("Helvetica", 12),
             bg='#4CAF50',
@@ -342,15 +342,7 @@ class CrosswordClient:
             
             is_system_puzzle = response.get('is_system_puzzle', False)
             
-            # Display across clues
-            tk.Label(
-                clues_content,
-                text="Across:",
-                font=("Helvetica", 14, "bold"),
-                bg='white',
-                fg='black'
-            ).pack(anchor="w", pady=(0, 5))
-            
+
             # Prepare clue position maps
             across_clue_map = []
             down_clue_map = []
@@ -362,6 +354,7 @@ class CrosswordClient:
                 length = clue.get('len', 1)
                 positions = [(row, col + j) for j in range(length)]
                 across_clue_map.append((clue_text, positions))
+
 
             for clue in clues_data['down']:
                 clue_text = f"{clue['number']}. {clue['text']}"
@@ -383,8 +376,16 @@ class CrosswordClient:
                         if cell['state'] != 'disabled':
                             cell.config(bg=color)
 
-            # Display clues and bind highlight
-            for clue_text, positions in across_clue_map + down_clue_map:
+            # Display across clues
+            tk.Label(
+                clues_content,
+                text="Across:",
+                font=("Helvetica", 14, "bold"),
+                bg='white',
+                fg='black'
+            ).pack(anchor="w", pady=(0, 5))
+
+            for clue_text, positions in across_clue_map:
                 label = tk.Label(
                     clues_content,
                     text=clue_text,
@@ -397,7 +398,28 @@ class CrosswordClient:
                 label.pack(anchor="w", pady=2)
                 label.bind("<Button-1>", lambda e, pos=positions: highlight_cells(pos))
 
-            
+            # Display down clues
+            tk.Label(
+                clues_content,
+                text="Down:",
+                font=("Helvetica", 14, "bold"),
+                bg='white',
+                fg='black'
+            ).pack(anchor="w", pady=(20, 5))
+
+            for clue_text, positions in down_clue_map:
+                label = tk.Label(
+                    clues_content,
+                    text=clue_text,
+                    font=("Helvetica", 12),
+                    bg='white',
+                    fg='black',
+                    wraplength=300,
+                    justify="left"
+                )
+                label.pack(anchor="w", pady=2)
+                label.bind("<Button-1>", lambda e, pos=positions: highlight_cells(pos))
+
             # Create button frame
             button_frame = tk.Frame(main_frame, bg='white')
             button_frame.pack(pady=20)
@@ -1134,12 +1156,13 @@ class CrosswordClient:
         # View Friend Requests button
         tk.Button(
             self.root,
-            text="View Friend Requests",  # The button text to view pending requests
-            command=self.show_friend_requests,  # This function shows the requests
+            text="View Friend Requests",
+            command=self.show_friend_requests,
             font=("Helvetica", 12),
             bg='#2196F3',
             fg='black'
         ).pack(pady=10)
+
         # View Friends button
         tk.Button(
             self.root,
@@ -1155,6 +1178,16 @@ class CrosswordClient:
             self.root,
             text="Send Message",
             command=self.show_send_message,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+        # View Messages button
+        tk.Button(
+            self.root,
+            text="View Messages",
+            command=self.show_view_messages,
             font=("Helvetica", 12),
             bg='#2196F3',
             fg='black'
@@ -1377,35 +1410,52 @@ class CrosswordClient:
             ).pack(pady=40)
 
             # Display pending requests
-            for request in response['pending_requests']:
-                user_id = request['user_id']
-                friend_id = request['friend_id']
+            if response['pending_requests']:
+                for request in response['pending_requests']:
+                    sender_id = request['user_id']  # This is the user who sent the request
 
+                    tk.Label(
+                        self.root,
+                        text=f"{sender_id} wants to add you as a friend",
+                        font=("Helvetica", 14)
+                    ).pack(pady=10)
+
+                    # Accept button
+                    tk.Button(
+                        self.root,
+                        text=f"Accept {sender_id}",
+                        command=lambda sender_id=sender_id: self.accept_friend_request(sender_id),
+                        font=("Helvetica", 12),
+                        bg='#4CAF50',
+                        fg='black'
+                    ).pack(pady=5)
+
+                    # Reject button
+                    tk.Button(
+                        self.root,
+                        text=f"Reject {sender_id}",
+                        command=lambda sender_id=sender_id: self.reject_friend_request(sender_id),
+                        font=("Helvetica", 12),
+                        bg='#F44336',
+                        fg='black'
+                    ).pack(pady=5)
+            else:
+                # Show message when there are no pending requests
                 tk.Label(
                     self.root,
-                    text=f"{friend_id} wants to add you as a friend",
+                    text="No pending friend requests",
                     font=("Helvetica", 14)
-                ).pack(pady=10)
+                ).pack(pady=20)
 
-                # Accept button
-                tk.Button(
-                    self.root,
-                    text=f"Accept {friend_id}",
-                    command=lambda friend_id=friend_id: self.accept_friend_request(friend_id),
-                    font=("Helvetica", 12),
-                    bg='#4CAF50',
-                    fg='black'
-                ).pack(pady=5)
-
-                # Reject button
-                tk.Button(
-                    self.root,
-                    text=f"Reject {friend_id}",
-                    command=lambda friend_id=friend_id: self.reject_friend_request(friend_id),
-                    font=("Helvetica", 12),
-                    bg='#F44336',
-                    fg='black'
-                ).pack(pady=5)
+            # Always show Back to Menu button
+            tk.Button(
+                self.root,
+                text="Back to Menu",
+                command=self.show_main_menu,
+                font=("Helvetica", 12),
+                bg='#2196F3',
+                fg='black'
+            ).pack(pady=20)
 
         except Exception as e:
             messagebox.showerror("Error", f"Network error: {str(e)}")
@@ -1447,6 +1497,134 @@ class CrosswordClient:
                 messagebox.showerror("Error", response.get('message', 'Failed to reject friend request'))
         except Exception as e:
             messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_view_messages(self):
+        """Display message history with friends"""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Title
+        tk.Label(
+            self.root,
+            text="View Messages",
+            font=("Helvetica", 24)
+        ).pack(pady=20)
+
+        try:
+            # First get the friends list
+            self.sock.send(json.dumps({
+                'action': 'get_friends',
+                'user_id': self.current_user
+            }).encode())
+
+            response = self.receive_response()
+
+            if response['status'] != 'ok':
+                messagebox.showerror("Error", response.get('message', 'Failed to get friends list'))
+                return
+
+            friends = response['friends']
+
+            if not friends:
+                tk.Label(
+                    self.root,
+                    text="You don't have any friends yet",
+                    font=("Helvetica", 14)
+                ).pack(pady=20)
+            else:
+                # Create a frame for the messages area
+                messages_frame = tk.Frame(self.root)
+                messages_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+                # Create a canvas with scrollbar for the messages
+                canvas = tk.Canvas(messages_frame, bg='white')
+                scrollbar = tk.Scrollbar(messages_frame, orient="vertical", command=canvas.yview)
+                scrollable_frame = tk.Frame(canvas, bg='white')
+
+                scrollable_frame.bind(
+                    "<Configure>",
+                    lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+                )
+
+                canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+                canvas.configure(yscrollcommand=scrollbar.set)
+
+                # For each friend, get and display messages
+                for friend in friends:
+                    # Create a frame for this friend's messages
+                    friend_frame = tk.Frame(scrollable_frame, bg='white')
+                    friend_frame.pack(fill="x", pady=10)
+
+                    tk.Label(
+                        friend_frame,
+                        text=f"Messages with {friend}:",
+                        font=("Helvetica", 12, "bold"),
+                        bg='white'
+                    ).pack(anchor="w")
+
+                    # Get messages with this friend
+                    self.sock.send(json.dumps({
+                        'action': 'get_messages',
+                        'user_id': self.current_user,
+                        'friend_id': friend
+                    }).encode())
+
+                    msg_response = self.receive_response()
+
+                    if msg_response['status'] == 'ok':
+                        messages = msg_response['messages']
+                        if messages:
+                            for msg in messages:
+                                sender = msg['sender_id']
+                                message = msg['message']
+                                timestamp = msg['timestamp']
+                                
+                                # Format the message
+                                if sender == self.current_user:
+                                    prefix = "You: "
+                                    bg_color = '#E3F2FD'  # Light blue for sent messages
+                                else:
+                                    prefix = f"{sender}: "
+                                    bg_color = '#F5F5F5'  # Light grey for received messages
+
+                                # Create message bubble
+                                msg_frame = tk.Frame(friend_frame, bg=bg_color)
+                                msg_frame.pack(fill="x", pady=2, padx=10)
+                                
+                                tk.Label(
+                                    msg_frame,
+                                    text=f"{prefix}{message}",
+                                    wraplength=400,
+                                    justify="left",
+                                    bg=bg_color,
+                                    padx=10,
+                                    pady=5
+                                ).pack(anchor="w")
+                        else:
+                            tk.Label(
+                                friend_frame,
+                                text="No messages yet",
+                                font=("Helvetica", 10),
+                                bg='white'
+                            ).pack(pady=5)
+
+                # Pack the canvas and scrollbar
+                canvas.pack(side="left", fill="both", expand=True)
+                scrollbar.pack(side="right", fill="y")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+        # Back to Social Menu button
+        tk.Button(
+            self.root,
+            text="Back to Social Menu",
+            command=self.show_social_menu,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=20)
 
 if __name__ == "__main__":
     CrosswordClient()
