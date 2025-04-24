@@ -1,7 +1,11 @@
 import socket
 import json
+import time
+import puz
 import tkinter as tk
 from tkinter import messagebox
+from tkinter import filedialog
+import traceback
 
 class CrosswordClient:
     def __init__(self):
@@ -75,7 +79,7 @@ class CrosswordClient:
                 'password': password
             }).encode())
             
-            response = json.loads(self.sock.recv(4096).decode())
+            response = self.receive_response()
             
             if response['status'] == 'ok':
                 self.current_user = username
@@ -125,12 +129,25 @@ class CrosswordClient:
             bg='#2196F3',
             fg='black'
         ).pack(pady=10)
+
+
+        # Social button
+        tk.Button(
+            self.root,
+            text="Social Menu",
+            command=self.show_social_menu,
+            font=("Helvetica", 12),
+            bg='#4CAF50',
+            fg='black'
+        ).pack(pady=10)
+
     
     def show_puzzle_list(self):
         """Display puzzle list"""
         try:
             self.sock.send(json.dumps({'action': 'get_puzzles'}).encode())
-            response = json.loads(self.sock.recv(4096).decode())
+
+            response = self.receive_response()
             
             if response['status'] != 'ok':
                 messagebox.showerror("Error", response.get('message', 'Failed to get puzzle list'))
@@ -188,20 +205,61 @@ class CrosswordClient:
         except Exception as e:
             messagebox.showerror("Error", f"Network error: {str(e)}")
     
+    def receive_response(self):
+        """Receive and parse response from server"""
+        try:
+            data_buffer = b""
+            while True:
+                chunk = self.sock.recv(4096)
+                if not chunk:
+                    break
+                data_buffer += chunk
+                try:
+                    # Try to parse the accumulated data
+                    response = json.loads(data_buffer.decode())
+                    if 'pending_requests' not in response:
+                        response['pending_requests'] = []  # Add empty list if missing
+                    return response
+                except json.JSONDecodeError as e:
+                    if "Unterminated string" not in str(e):
+                        # If it's not an unterminated string, it's a real error
+                        print(f"JSON Decode Error: {str(e)}")
+                        print(f"Received data: {data_buffer.decode()}")
+                        raise
+                    # If it's an unterminated string, continue receiving data
+                    continue
+        except Exception as e:
+            print(f"Error receiving response: {str(e)}")
+            print("Full error:")
+            traceback.print_exc()
+            raise
+
     def show_puzzle(self, puzzle_id):
         """Display puzzle"""
+        
+        self.start_time = time.time()
+
         try:
+            print(f"\n=== Debug: Requesting puzzle {puzzle_id} ===")
+
             self.sock.send(json.dumps({
                 'action': 'get_puzzle_detail',
                 'puzzle_id': puzzle_id
             }).encode())
             
-            response = json.loads(self.sock.recv(4096).decode())
+            print("Waiting for server response...")
+            response = self.receive_response()
+
             
             if response['status'] != 'ok':
                 messagebox.showerror("Error", response.get('message', 'Failed to get puzzle details'))
                 return
             
+            print("\n=== Debug: Processing puzzle data ===")
+            print(f"Grid: {response['grid']}")
+            print(f"Clues: {response['clues']}")
+            print(f"Is system puzzle: {response.get('is_system_puzzle', False)}")
+
             # Clear existing widgets
             for widget in self.root.winfo_children():
                 widget.destroy()
@@ -218,78 +276,161 @@ class CrosswordClient:
             grid_frame = tk.Frame(game_frame, bg='white')
             grid_frame.pack(side="left", padx=20)
             
-            # Parse grid
-            grid_data = json.loads(response['grid'])
+            # Parse grid data
+            grid_data = response['grid']
+            if isinstance(grid_data, str):
+                grid_data = json.loads(grid_data)
             
             self.cells = []
             for i, row in enumerate(grid_data):
                 cell_row = []
-                for j, char in enumerate(row):
-                    cell = tk.Entry(
-                        grid_frame,
-                        width=2,
-                        justify="center",
-                        font=("Helvetica", 20),
-                        bg='white',
-                        fg='black'
-                    )
-                    cell.grid(row=i, column=j, padx=2, pady=2)
-                    if char != '_':
-                        cell.insert(0, char)
-                        cell.configure(state="readonly")
-                    cell_row.append(cell)
+
+                for j, cell in enumerate(row):
+                    # Create cell frame
+                    cell_frame = tk.Frame(grid_frame, width=40, height=40, bg='white')
+                    cell_frame.grid_propagate(False)
+                    cell_frame.grid(row=i, column=j, padx=1, pady=1)
+                    
+                    # Create cell entry
+                    is_black = False
+                    if isinstance(cell, dict):
+                        is_black = cell.get('is_black', False)
+                    else:
+                        is_black = cell == '.'
+                    
+                    if is_black:
+                        entry = tk.Entry(cell_frame, width=2, font=("Helvetica", 20), bg='black', state="disabled")
+                        entry.pack(expand=True, fill="both")
+                    else:
+                        entry = tk.Entry(cell_frame, width=2, font=("Helvetica", 20), bg='white', fg='black', justify='center')
+                        entry.pack(expand=True, fill="both")
+
+                        def limit_to_one_char(event, entry=entry):
+                            value = entry.get()
+                            if len(value) > 1:
+                                entry.delete(1, tk.END)
+
+                        entry.bind('<KeyRelease>', limit_to_one_char)
+
+                    cell_row.append(entry)
+
                 self.cells.append(cell_row)
             
             # Force grid frame to update
             grid_frame.update_idletasks()
             
-            # Create clues frame
+            # Create clues frame with scrollbar
             clues_frame = tk.Frame(game_frame, bg='white')
             clues_frame.pack(side="right", padx=20, fill="both", expand=True)
             
-            # Parse and display clues
-            clues_data = json.loads(response['clues'])
+            # Create canvas for scrollable clues
+            clues_canvas = tk.Canvas(clues_frame, bg='white', highlightthickness=0)
+            clues_scrollbar = tk.Scrollbar(clues_frame, orient="vertical", command=clues_canvas.yview)
+            clues_content = tk.Frame(clues_canvas, bg='white')
             
+            clues_content.bind(
+                "<Configure>",
+                lambda e: clues_canvas.configure(scrollregion=clues_canvas.bbox("all"))
+            )
+            
+            clues_canvas.create_window((0, 0), window=clues_content, anchor="nw")
+            clues_canvas.configure(yscrollcommand=clues_scrollbar.set)
+            
+            # Pack canvas and scrollbar
+            clues_canvas.pack(side="left", fill="both", expand=True)
+            clues_scrollbar.pack(side="right", fill="y")
+            
+            # Parse clues data
+            clues_data = response['clues']
+            if isinstance(clues_data, str):
+                clues_data = json.loads(clues_data)
+            
+            is_system_puzzle = response.get('is_system_puzzle', False)
+            
+
+            # Prepare clue position maps
+            across_clue_map = []
+            down_clue_map = []
+
+            for clue in clues_data['across']:
+                clue_text = f"{clue['number']}. {clue['text']}"
+                row = clue.get('row', 0)
+                col = clue.get('col', 0)
+                length = clue.get('len', 1)
+                positions = [(row, col + j) for j in range(length)]
+                across_clue_map.append((clue_text, positions))
+
+            for clue in clues_data['down']:
+                clue_text = f"{clue['number']}. {clue['text']}"
+                row = clue.get('row', 0)
+                col = clue.get('col', 0)
+                length = clue.get('len', 1)
+                positions = [(row + j, col) for j in range(length)]
+                down_clue_map.append((clue_text, positions))
+
+            # Define highlight function
+            def highlight_cells(positions, color="#FFFACD"):
+                for row in self.cells:
+                    for cell in row:
+                        if cell['state'] != 'disabled':
+                            cell.config(bg='white')
+                for r, c in positions:
+                    if 0 <= r < len(self.cells) and 0 <= c < len(self.cells[r]):
+                        cell = self.cells[r][c]
+                        if cell['state'] != 'disabled':
+                            cell.config(bg=color)
+
             # Display across clues
             tk.Label(
-                clues_frame,
+                clues_content,
+
                 text="Across:",
                 font=("Helvetica", 14, "bold"),
                 bg='white',
                 fg='black'
             ).pack(anchor="w", pady=(0, 5))
-            
-            for clue in clues_data['across']:
-                tk.Label(
-                    clues_frame,
-                    text=clue,
+
+            for clue_text, positions in across_clue_map:
+                label = tk.Label(
+                    clues_content,
+                    text=clue_text,
+
                     font=("Helvetica", 12),
                     bg='white',
                     fg='black',
                     wraplength=300,
                     justify="left"
-                ).pack(anchor="w", pady=2)
-            
+
+                )
+                label.pack(anchor="w", pady=2)
+                label.bind("<Button-1>", lambda e, pos=positions: highlight_cells(pos))
+
             # Display down clues
             tk.Label(
-                clues_frame,
+                clues_content,
+
                 text="Down:",
                 font=("Helvetica", 14, "bold"),
                 bg='white',
                 fg='black'
-            ).pack(anchor="w", pady=(15, 5))
-            
-            for clue in clues_data['down']:
-                tk.Label(
-                    clues_frame,
-                    text=clue,
+
+            ).pack(anchor="w", pady=(20, 5))
+
+            for clue_text, positions in down_clue_map:
+                label = tk.Label(
+                    clues_content,
+                    text=clue_text,
+
                     font=("Helvetica", 12),
                     bg='white',
                     fg='black',
                     wraplength=300,
                     justify="left"
-                ).pack(anchor="w", pady=2)
-            
+                )
+                label.pack(anchor="w", pady=2)
+                label.bind("<Button-1>", lambda e, pos=positions: highlight_cells(pos))
+
+
             # Create button frame
             button_frame = tk.Frame(main_frame, bg='white')
             button_frame.pack(pady=20)
@@ -312,35 +453,55 @@ class CrosswordClient:
                 fg='black'
             ).pack(side="left", padx=5)
             
-            # Force the entire window to update
-            self.root.update_idletasks()
+            # Create timer label
+            self.timer_label = tk.Label(button_frame, text="Time: 0s", font=("Helvetica", 12), bg='white', fg='black')
+            self.timer_label.pack(side="left", padx=10)
+            
+            # Start timer
+            self.update_timer()
             
         except Exception as e:
+            print(f"Error in show_puzzle: {str(e)}")
+            print("Full error:")
+            traceback.print_exc()
             messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def update_timer(self):
+        if hasattr(self, 'start_time'):
+            elapsed = int(time.time() - self.start_time)
+            self.timer_label.config(text=f"Time: {elapsed}s")
+            self.root.after(1000, self.update_timer)
     
     def submit_solution(self, puzzle_id):
         """Submit answer"""
+        elapsed_time = int(time.time() - self.start_time)
+
         try:
             # Collect answer
             solution = []
             for row in self.cells:
                 solution_row = []
                 for cell in row:
-                    value = cell.get().strip().upper()
-                    if not value and cell['state'] != 'readonly':
-                        messagebox.showerror("Error", "Please fill in all blanks")
-                        return
+
+                    value = cell.get().strip().upper() if cell['state'] != 'disabled' else ''
                     solution_row.append(value)
                 solution.append(solution_row)
             
+            # Convert solution to JSON string
+            solution_json = json.dumps(solution)
+            
+
             self.sock.send(json.dumps({
                 'action': 'submit_solution',
                 'username': self.current_user,
                 'puzzle_id': puzzle_id,
-                'solution': json.dumps(solution)
+
+                'solution': solution_json,
+                'time_taken': elapsed_time
             }).encode())
             
-            response = json.loads(self.sock.recv(4096).decode())
+            response = self.receive_response()
+
             
             if response['status'] == 'ok':
                 messagebox.showinfo("Success", "Correct answer!")
@@ -349,6 +510,11 @@ class CrosswordClient:
                 messagebox.showerror("Error", response.get('message', 'Incorrect answer, please try again'))
                 
         except Exception as e:
+
+            print(f"Error in submit_solution: {str(e)}")
+            print("Full error:")
+            traceback.print_exc()
+
             messagebox.showerror("Error", f"Network error: {str(e)}")
     
     def show_add_puzzle(self):
@@ -361,7 +527,8 @@ class CrosswordClient:
         main_frame = tk.Frame(self.root)
         main_frame.pack(expand=True, fill="both", padx=40, pady=20)
         
-        # Create top frame for title and return button
+        # Create top frame for title, import button and return button
+
         top_frame = tk.Frame(main_frame, bg='white')
         top_frame.pack(fill="x", pady=10)
         
@@ -384,120 +551,371 @@ class CrosswordClient:
             fg='black'
         ).pack(side="right", padx=20)
         
-        # Create scrollable area
-        canvas = tk.Canvas(main_frame, bg='white')
-        scrollbar = tk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg='white')
+
+        # Create content frame
+        content_frame = tk.Frame(main_frame, bg='white')
+        content_frame.pack(expand=True, fill="both", padx=20)
+
+        # Left side - Grid controls and grid
+        left_frame = tk.Frame(content_frame, bg='white')
+        left_frame.pack(side="left", fill="both", expand=True)
+
+        # Title input
+        title_frame = tk.Frame(left_frame, bg='white')
+        title_frame.pack(fill="x", pady=5)
+        tk.Label(title_frame, text="Title:", font=("Helvetica", 12), bg='white').pack(side="left", padx=5)
+        title_entry = tk.Entry(title_frame, font=("Helvetica", 12), width=30)
+        title_entry.pack(side="left", expand=True, fill="x", padx=5)
+
+        # Grid size controls
+        size_frame = tk.Frame(left_frame, bg='white')
+        size_frame.pack(fill="x", pady=10)
         
+        tk.Label(size_frame, text="Grid Size:", font=("Helvetica", 12), bg='white').pack(side="left", padx=5)
+        size_var = tk.StringVar(value="3x3")
+        sizes = ["3x3", "4x4", "5x5", "6x6", "7x7", "8x8", "9x9", "10x10"]  # Define sizes here
+        size_menu = tk.OptionMenu(size_frame, size_var, *sizes)
+        size_menu.config(font=("Helvetica", 12), bg='white')
+        size_menu.pack(side="left", padx=5)
+
+        # Grid frame
+        grid_frame = tk.Frame(left_frame, bg='white')
+        grid_frame.pack(pady=10)
+
+        # Grid cells storage
+        cells = []
+        current_size = [3, 3]  # Default size
+
+        def create_grid(rows, cols):
+            nonlocal cells
+            # Clear existing grid
+            for widget in grid_frame.winfo_children():
+                widget.destroy()
+            
+            cells = []
+            for i in range(rows):
+                row_cells = []
+                for j in range(cols):
+                    cell_frame = tk.Frame(grid_frame, width=40, height=40)
+                    cell_frame.grid_propagate(False)
+                    cell_frame.grid(row=i, column=j, padx=1, pady=1)
+
+                    entry = tk.Entry(cell_frame, width=2, font=("Helvetica", 20), 
+                                   bg='white', fg='black', justify='center')
+                    entry.pack(expand=True, fill="both")
+
+                    def limit_to_one_char(event, entry=entry):
+                        value = entry.get()
+                        if len(value) > 1:
+                            entry.delete(1, tk.END)
+
+                    entry.bind('<KeyRelease>', limit_to_one_char)
+
+                    row_cells.append(entry)
+                cells.append(row_cells)
+
+        def update_grid_size(*args):
+            size = size_var.get()
+            rows, cols = map(int, size.split('x'))
+            current_size[0], current_size[1] = rows, cols
+            create_grid(rows, cols)
+
+        size_var.trace('w', update_grid_size)
+
+        # Right side - Clues input with scroll support
+        right_container = tk.Frame(content_frame, bg='white')
+        right_container.pack(side="right", fill="both", expand=True, padx=(20, 0))
+
+        # 创建 Canvas + Scrollbar 包裹 right_frame
+        right_canvas = tk.Canvas(right_container, bg='white', highlightthickness=0)
+        scrollbar = tk.Scrollbar(right_container, orient="vertical", command=right_canvas.yview)
+        scrollable_frame = tk.Frame(right_canvas, bg='white')
+
         scrollable_frame.bind(
             "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            lambda e: right_canvas.configure(scrollregion=right_canvas.bbox("all"))
         )
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Add instructions
-        instruction_text = """Puzzle Creation Guide:
-1. Use underscore '_' to mark letters that players need to guess
-2. Other characters will be shown as hints
-3. Don't add spaces between characters in each row
-4. Each puzzle must have at least one letter to guess
 
-Example:
-Grid:       Answer:
-C_T        CAT
-(Shows 'C' and 'T', player needs to guess 'A')"""
-        
-        instruction_label = tk.Label(
-            scrollable_frame,
-            text=instruction_text,
-            font=("Helvetica", 12),
-            bg='white',
-            fg='black',
-            justify=tk.LEFT
-        )
-        instruction_label.pack(pady=10, anchor='w')
-        
-        # Title input
-        title_frame = tk.Frame(scrollable_frame, bg='white')
-        title_frame.pack(fill="x", pady=5)
-        
-        tk.Label(title_frame, text="Title:", font=("Helvetica", 12), bg='white', fg='black').pack(side="left", padx=5)
-        title_entry = tk.Entry(title_frame, font=("Helvetica", 12), width=30, bg='white', fg='black')
-        title_entry.pack(side="left", expand=True, fill="x", padx=5)
-        
-        # Grid input
-        tk.Label(scrollable_frame, text="Grid (with underscores):", font=("Helvetica", 12), bg='white', fg='black').pack(anchor="w", pady=5)
-        grid_text = tk.Text(scrollable_frame, height=5, width=30, font=("Helvetica", 12), bg='white', fg='black')
-        grid_text.pack(pady=5)
-        
-        # Answer input
-        tk.Label(scrollable_frame, text="Complete Answer:", font=("Helvetica", 12), bg='white', fg='black').pack(anchor="w", pady=5)
-        answer_text = tk.Text(scrollable_frame, height=5, width=30, font=("Helvetica", 12), bg='white', fg='black')
-        answer_text.pack(pady=5)
-        
-        # Clues input
-        tk.Label(scrollable_frame, text="Clues:", font=("Helvetica", 12), bg='white', fg='black').pack(anchor="w", pady=5)
-        clues_text = tk.Text(scrollable_frame, height=10, width=30, font=("Helvetica", 12), bg='white', fg='black')
-        clues_text.pack(pady=5)
-        
-        def validate_and_submit():
-            """Validate input and submit puzzle"""
-            title = title_entry.get().strip()
-            grid = grid_text.get("1.0", "end-1c").strip()
-            answer = answer_text.get("1.0", "end-1c").strip()
-            clues = clues_text.get("1.0", "end-1c").strip()
+        right_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        right_canvas.configure(yscrollcommand=scrollbar.set)
+
+        # 真正显示的 clue 区域
+        right_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # 用 scrollable_frame 替代原 right_frame，后面所有 clue 相关内容都添加到 scrollable_frame 里
+        right_frame = scrollable_frame
+
+        # Clues frame
+        clues_frame = tk.Frame(right_frame, bg='white')
+        clues_frame.pack(fill="both", expand=True)
+
+        # Across clues
+        across_frame = tk.Frame(clues_frame, bg='white')
+        across_frame.pack(fill="both", expand=True, pady=(0, 10))
+
+        tk.Label(across_frame, text="Across Clues:", font=("Helvetica", 14, "bold"), 
+                bg='white').pack(anchor="w")
+
+        across_clues_frame = tk.Frame(across_frame, bg='white')
+        across_clues_frame.pack(fill="both", expand=True)
+
+        # Down clues
+        down_frame = tk.Frame(clues_frame, bg='white')
+        down_frame.pack(fill="both", expand=True)
+
+        tk.Label(down_frame, text="Down Clues:", font=("Helvetica", 14, "bold"), 
+                bg='white').pack(anchor="w")
+
+        down_clues_frame = tk.Frame(down_frame, bg='white')
+        down_clues_frame.pack(fill="both", expand=True)
+
+        across_entries = []
+        down_entries = []
+
+        def add_clue_entry(parent_frame, entries_list):
+            num = len(entries_list) + 1
+            frame = tk.Frame(parent_frame, bg='white')
+            frame.pack(fill="x", pady=2)
             
-            # Validate title
-            if not title:
-                messagebox.showerror("Error", "Please enter a title")
-                return
+            tk.Label(frame, text=f"{num}.", font=("Helvetica", 12), 
+                    bg='white', width=3).pack(side="left")
+            entry = tk.Entry(frame, font=("Helvetica", 12), width=40)
+            entry.pack(side="left", fill="x", expand=True, padx=5)
             
-            # Validate grid
-            if not grid:
-                messagebox.showerror("Error", "Please enter the grid")
-                return
-            
-            # Validate if there's at least one letter to guess
-            if '_' not in grid:
-                messagebox.showerror("Error", "Grid must contain at least one underscore '_' for letters to guess")
-                return
-            
-            # Validate answer
-            if not answer:
-                messagebox.showerror("Error", "Please enter the complete answer")
-                return
-            
-            # Validate answer matches grid
-            grid_chars = [c for c in grid if c != '_']
-            for c in grid_chars:
-                if c not in answer:
-                    messagebox.showerror("Error", f"Answer is missing the hint character '{c}'")
-                    return
-            
-            if len(answer.replace('\n', '')) != len(grid.replace('\n', '')):
-                messagebox.showerror("Error", "Answer length doesn't match grid")
-                return
-            
-            # Validate clues
-            if not clues:
-                messagebox.showerror("Error", "Please enter clues")
+            entries_list.append(entry)
+
+        def add_across_clue():
+            add_clue_entry(across_clues_frame, across_entries)
+
+        def add_down_clue():
+            add_clue_entry(down_clues_frame, down_entries)
+
+        # Add clue buttons
+        tk.Button(across_frame, text="Add Across Clue", command=add_across_clue,
+                 font=("Helvetica", 10), bg='#2196F3', fg='black').pack(pady=5)
+        
+        tk.Button(down_frame, text="Add Down Clue", command=add_down_clue,
+                 font=("Helvetica", 10), bg='#2196F3', fg='black').pack(pady=5)
+
+        # Create initial grid
+        create_grid(3, 3)
+        
+        # Add initial clue entries
+        add_across_clue()
+        add_down_clue()
+
+        def import_puz_file():
+            """Import and display PUZ file content in the grid editor"""
+            across_clue_map = []
+            down_clue_map = []
+
+            file_path = filedialog.askopenfilename(filetypes=[("PUZ files", "*.puz")])
+            if not file_path:
                 return
             
             try:
-                self.sock.send(json.dumps({
+                puzzle = puz.read(file_path)
+                numbering = puzzle.clue_numbering()
+                print(f"Debug: Found {len(numbering.across)} across and {len(numbering.down)} down clues")
+
+                # Update grid size based on puzzle dimensions
+                height = min(10, puzzle.height)
+                width = min(10, puzzle.width)
+
+                # Update current_size and size_var
+                current_size[0], current_size[1] = height, width
+                size_var.set(f"{height}x{width}")
+                create_grid(height, width)
+
+                # If original size exceeds limit, show info but don't error
+                if puzzle.height > 10 or puzzle.width > 10:
+                    messagebox.showinfo("Size Limitation",
+                        f"Imported puzzle is {puzzle.width}x{puzzle.height}. "
+                        "Only the top-left 10x10 section will be used.")
+
+                # Clear existing clues
+                for widget in across_clues_frame.winfo_children():
+                    widget.destroy()
+                for widget in down_clues_frame.winfo_children():
+                    widget.destroy()
+                across_entries.clear()
+                down_entries.clear()
+
+                # Fill the grid
+                for y in range(height):
+                    for x in range(width):
+                        i = y * puzzle.width + x  # Keep original width to avoid misalignment
+                        if i >= len(puzzle.solution):  # Prevent index out of range
+                            continue
+                        
+                        char = puzzle.solution[i]
+                        is_black = puzzle.fill[i] == '.'
+                        
+                        cell = cells[y][x]
+                        if is_black:
+                            cell.delete(0, tk.END)
+                            cell.config(state='disabled', bg='black')
+                            cell.master.config(bg='black')  # Make frame black too
+                        else:
+                            cell.config(state='normal', bg='white')
+                            cell.master.config(bg='white')
+                            cell.delete(0, tk.END)
+                            cell.insert(0, char)
+
+                # Across Clues
+                for entry in numbering.across:
+                    cell_index = entry['cell']
+                    row = cell_index // puzzle.width
+                    col = cell_index % puzzle.width
+
+                    if row < height and col < width:
+                        add_clue_entry(across_clues_frame, across_entries)
+                        clue_text = puzzle.clues[entry['clue_index']]
+                        across_entries[-1].insert(0, clue_text)
+
+                        # 记录格子范围
+                        positions = [(row, col + i) for i in range(entry['len']) if col + i < width]
+                        across_clue_map.append((across_entries[-1], positions))
+
+                # Down Clues
+                for entry in numbering.down:
+                    cell_index = entry['cell']
+                    row = cell_index // puzzle.width
+                    col = cell_index % puzzle.width
+
+                    if row < height and col < width:
+                        add_clue_entry(down_clues_frame, down_entries)
+                        clue_text = puzzle.clues[entry['clue_index']]
+                        down_entries[-1].insert(0, clue_text)
+
+                        positions = [(row + i, col) for i in range(entry['len']) if row + i < height]
+                        down_clue_map.append((down_entries[-1], positions))
+
+
+                # Set title
+                title_entry.delete(0, tk.END)
+                title_entry.insert(0, puzzle.title or "Untitled PUZ")
+
+                messagebox.showinfo("Success", "PUZ file loaded successfully!")
+            
+            except Exception as e:
+                print(f"Error parsing PUZ file: {str(e)}")
+                traceback.print_exc()  # Print full stack trace
+                messagebox.showerror("Error", f"Failed to parse PUZ file:\n{e}")
+
+            def highlight_cells(cells, positions, color="#FFFFCC"):
+                for row in cells:
+                    for cell in row:
+                        if cell['state'] != 'disabled':
+                            cell.config(bg='white')
+                for r, c in positions:
+                    if 0 <= r < len(cells) and 0 <= c < len(cells[r]):
+                        cell = cells[r][c]
+                        if cell['state'] != 'disabled':
+                            cell.config(bg=color)
+
+            for entry_widget, positions in across_clue_map:
+                entry_widget.bind("<Button-1>", lambda e, pos=positions: highlight_cells(cells, pos))
+
+            for entry_widget, positions in down_clue_map:
+                entry_widget.bind("<Button-1>", lambda e, pos=positions: highlight_cells(cells, pos))
+
+        # Import PUZ button in top frame
+        tk.Button(
+            top_frame,
+            text="Import PUZ File",
+            command=import_puz_file,  # Now import_puz_file is accessible
+            font=("Helvetica", 12),
+            bg='#4CAF50',
+            fg='black',
+            padx=10
+        ).pack(side="left", padx=20)
+
+        def validate_and_submit():
+            """Validate input and submit puzzle"""
+            title = title_entry.get().strip()
+            if not title:
+                messagebox.showerror("Error", "Please enter a title")
+                return
+
+            # Collect grid and answer
+            grid_data = []
+            answer_data = []
+            rows, cols = current_size
+            
+            for i in range(rows):
+                grid_row = []
+                answer_row = []
+                for j in range(cols):
+                    cell = cells[i][j]
+                    value = cell.get().strip().upper()
+                    is_black = cell['state'] == 'disabled'
+                    
+                    if not is_black and not value:
+                        messagebox.showerror("Error", "Please fill in all white cells")
+                        return
+                    
+                    grid_row.append({
+                        "char": value if not is_black else "",
+                        "is_black": is_black
+                    })
+                    answer_row.append(value if not is_black else "")
+                grid_data.append(grid_row)
+                answer_data.append(answer_row)
+
+            # Collect clues
+            across_clues = []
+            for i, entry in enumerate(across_entries):
+                text = entry.get().strip()
+                if not text:
+                    messagebox.showerror("Error", f"Please fill in across clue {i+1}")
+                    return
+                across_clues.append({"number": i+1, "text": text})
+
+            down_clues = []
+            for i, entry in enumerate(down_entries):
+                text = entry.get().strip()
+                if not text:
+                    messagebox.showerror("Error", f"Please fill in down clue {i+1}")
+                    return
+                down_clues.append({"number": i+1, "text": text})
+
+            clues_data = {
+                "across": across_clues,
+                "down": down_clues
+            }
+
+            try:
+                print("\n=== Debug: Preparing puzzle data ===")
+                
+                # Convert data to JSON strings
+                grid_json = json.dumps(grid_data)
+                answer_json = json.dumps(answer_data)
+                clues_json = json.dumps(clues_data)
+                
+                print(f"Grid JSON type: {type(grid_json)}")
+                print(f"Answer JSON type: {type(answer_json)}")
+                print(f"Clues JSON type: {type(clues_json)}")
+                
+                request_data = {
                     'action': 'add_puzzle',
                     'title': title,
                     'author': self.current_user,
-                    'grid': grid,
-                    'answer': answer,
-                    'clues': clues
-                }).encode())
+                    'grid': grid_json,
+                    'answer': answer_json,
+                    'clues': clues_json
+                }
                 
+                print("\nFinal request data:")
+                print(json.dumps(request_data, indent=2))
+                
+                print("\nSending data to server...")
+                self.sock.send(json.dumps(request_data).encode())
+                
+                print("Waiting for server response...")
                 response = json.loads(self.sock.recv(4096).decode())
+                print(f"Server response: {response}")
                 
                 if response['status'] == 'ok':
                     messagebox.showinfo("Success", "Puzzle added successfully!")
@@ -506,17 +924,27 @@ C_T        CAT
                     messagebox.showerror("Error", response.get('message', 'Failed to add puzzle'))
                     
             except Exception as e:
+
+                print(f"\nError in validate_and_submit: {str(e)}")
+                print("Full error:")
+                import traceback
+                traceback.print_exc()
                 messagebox.showerror("Error", f"Network error: {str(e)}")
-        
+
         # Submit button
+        submit_frame = tk.Frame(left_frame, bg='white')
+        submit_frame.pack(pady=20)
+
         tk.Button(
-            scrollable_frame,
+            submit_frame,
             text="Submit",
             command=validate_and_submit,
             font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
-        ).pack(pady=20)
+            bg='#4CAF50',
+            fg='black',
+            padx=20
+        ).pack(side="left", padx=5)
+
     
     def show_statistics(self):
         """Display statistics"""
@@ -526,7 +954,7 @@ C_T        CAT
                 'username': self.current_user
             }).encode())
             
-            response = json.loads(self.sock.recv(4096).decode())
+            response = self.receive_response()
             
             if response['status'] != 'ok':
                 messagebox.showerror("Error", response.get('message', 'Failed to get statistics'))
@@ -601,6 +1029,17 @@ C_T        CAT
                 justify=tk.LEFT
             ).pack(anchor='w', padx=20)
             
+            latest_time = current_stats.get('latest_time')
+            if latest_time is not None:
+                tk.Label(
+                    current_user_frame,
+                    text=f"Time Spent on Last Puzzle: {latest_time} seconds",
+                    font=("Helvetica", 12),
+                    bg='white',
+                    fg='black',
+                    justify=tk.LEFT
+                ).pack(anchor='w', padx=20, pady=5)
+
             # Display leaderboard
             tk.Label(
                 scrollable_frame,
@@ -613,7 +1052,7 @@ C_T        CAT
             # Create table headers
             headers_frame = tk.Frame(scrollable_frame, bg='white')
             headers_frame.pack(fill="x", padx=20)
-            
+
             tk.Label(
                 headers_frame,
                 text="Username",
@@ -634,6 +1073,26 @@ C_T        CAT
             
             tk.Label(
                 headers_frame,
+
+                text="Fastest Time (s)",
+                font=("Helvetica", 12, "bold"),
+                width=15,
+                bg='white',
+                fg='black'
+            ).pack(side="left")
+
+            tk.Label(
+                headers_frame,
+                text="Average Time (s)",
+                font=("Helvetica", 12, "bold"),
+                width=15,
+                bg='white',
+                fg='black'
+            ).pack(side="left")
+
+            tk.Label(
+                headers_frame,
+
                 text="Puzzles Created",
                 font=("Helvetica", 12, "bold"),
                 width=15,
@@ -645,7 +1104,7 @@ C_T        CAT
             for user_stats in response['all_users_stats']:
                 user_frame = tk.Frame(scrollable_frame, bg='white')
                 user_frame.pack(fill="x", padx=20)
-                
+
                 tk.Label(
                     user_frame,
                     text=user_stats['username'],
@@ -666,6 +1125,26 @@ C_T        CAT
                 
                 tk.Label(
                     user_frame,
+
+                    text=str(user_stats.get('fastest_time', 'N/A')),
+                    font=("Helvetica", 12),
+                    width=15,
+                    bg='white',
+                    fg='black'
+                ).pack(side="left")
+
+                tk.Label(
+                    user_frame,
+                    text=str(user_stats.get('average_time', 'N/A')),
+                    font=("Helvetica", 12),
+                    width=15,
+                    bg='white',
+                    fg='black'
+                ).pack(side="left")
+
+                tk.Label(
+                    user_frame,
+
                     text=str(user_stats['puzzles_created']),
                     font=("Helvetica", 12),
                     width=15,
@@ -675,6 +1154,502 @@ C_T        CAT
             
         except Exception as e:
             messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_social_menu(self):
+        """Display social menu for adding friends, viewing friends, sending messages"""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Title
+        tk.Label(
+            self.root,
+            text="Social Menu",
+            font=("Helvetica", 24)
+        ).pack(pady=40)
+
+        # Add Friend button
+        tk.Button(
+            self.root,
+            text="Add Friend",
+            command=self.show_add_friend,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+        # View Friend Requests button
+        tk.Button(
+            self.root,
+            text="View Friend Requests",
+            command=self.show_friend_requests,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+        # View Friends button
+        tk.Button(
+            self.root,
+            text="View Friends",
+            command=self.show_friends_list,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+        # Send Message button
+        tk.Button(
+            self.root,
+            text="Send Message",
+            command=self.show_send_message,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+        # View Messages button
+        tk.Button(
+            self.root,
+            text="View Messages",
+            command=self.show_view_messages,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+        # Back to Menu button
+        tk.Button(
+            self.root,
+            text="Back to Menu",
+            command=self.show_main_menu,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=20)
+
+    def show_add_friend(self):
+        """Display add friend interface"""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Title
+        tk.Label(
+            self.root,
+            text="Add Friend",
+            font=("Helvetica", 24)
+        ).pack(pady=40)
+
+        # Friend username input
+        tk.Label(self.root, text="Friend's Username:").pack()
+        self.friend_username_entry = tk.Entry(self.root)
+        self.friend_username_entry.pack(pady=5)
+
+        # Add Friend button
+        tk.Button(
+            self.root,
+            text="Send Friend Request",
+            command=self.add_friend,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=20)
+
+        # Back to Menu button
+        tk.Button(
+            self.root,
+            text="Back to Menu",
+            command=self.show_main_menu,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+    def add_friend(self):
+        """Send friend request to server"""
+        friend_username = self.friend_username_entry.get()
+        if not friend_username:
+            messagebox.showerror("Error", "Please enter a friend's username")
+            return
+
+        try:
+            request_data = {
+                'action': 'add_friend',
+                'user_id': self.current_user,
+                'friend_id': friend_username
+            }
+
+            print(f"Debug: Sending friend request - {request_data}")  # Debug log
+            self.sock.send(json.dumps(request_data).encode())
+
+            response = self.receive_response()
+
+            print(f"Debug: Received response - {response}")  # Debug log
+
+            if response['status'] == 'ok':
+                messagebox.showinfo("Success", "Friend request sent!")
+            else:
+                messagebox.showerror("Error", response.get('message', 'Failed to send friend request'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_friends_list(self):
+        """Display list of friends"""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Title
+        tk.Label(
+            self.root,
+            text="Friends List",
+            font=("Helvetica", 24)
+        ).pack(pady=40)
+
+        try:
+            self.sock.send(json.dumps({
+                'action': 'get_friends',
+                'user_id': self.current_user
+            }).encode())
+
+            response = self.receive_response()
+
+            if response['status'] != 'ok':
+                messagebox.showerror("Error", response.get('message', 'Failed to get friends list'))
+                return
+
+            # Display friends list
+            friends_frame = tk.Frame(self.root)
+            friends_frame.pack(expand=True, fill="both", padx=40, pady=40)
+
+            for friend in response['friends']:
+                tk.Label(friends_frame, text=friend, font=("Helvetica", 12)).pack(pady=5)
+
+            # Back to Menu button
+            tk.Button(
+                self.root,
+                text="Back to Menu",
+                command=self.show_main_menu,
+                font=("Helvetica", 12),
+                bg='#2196F3',
+                fg='black'
+            ).pack(pady=20)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_send_message(self):
+        """Display send message interface"""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Title
+        tk.Label(
+            self.root,
+            text="Send Message",
+            font=("Helvetica", 24)
+        ).pack(pady=40)
+
+        # Friend username input
+        tk.Label(self.root, text="Friend's Username:").pack()
+        self.message_friend_username_entry = tk.Entry(self.root)
+        self.message_friend_username_entry.pack(pady=5)
+
+        # Message input
+        tk.Label(self.root, text="Message:").pack()
+        self.message_entry = tk.Entry(self.root, width=40)
+        self.message_entry.pack(pady=5)
+
+        # Send Message button
+        tk.Button(
+            self.root,
+            text="Send Message",
+            command=self.send_message,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=20)
+
+        # Back to Menu button
+        tk.Button(
+            self.root,
+            text="Back to Menu",
+            command=self.show_main_menu,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+    def send_message(self):
+        """Send message to friend"""
+        friend_username = self.message_friend_username_entry.get()
+        message = self.message_entry.get()
+
+        if not friend_username or not message:
+            messagebox.showerror("Error", "Both fields are required")
+            return
+
+        try:
+            self.sock.send(json.dumps({
+                'action': 'send_message',
+                'sender_id': self.current_user,
+                'receiver_id': friend_username,
+                'message': message
+            }).encode())
+            
+            response = self.receive_response()
+            
+            if response['status'] == 'ok':
+                messagebox.showinfo("Success", "Message sent!")
+            else:
+                messagebox.showerror("Error", response.get('message', 'Failed to send message'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_friend_requests(self):
+        """Display all pending friend requests"""
+        try:
+            self.sock.send(json.dumps({
+                'action': 'get_friend_requests',
+                'user_id': self.current_user
+            }).encode())
+
+            response = self.receive_response()
+            print(f"Debug: Received pending friend requests response - {response}")  # Debug log
+
+            if response['status'] != 'ok':
+                messagebox.showerror("Error", response.get('message', 'Failed to get friend requests'))
+                return
+
+            # Clear existing widgets
+            for widget in self.root.winfo_children():
+                widget.destroy()
+
+            # Title
+            tk.Label(
+                self.root,
+                text="Pending Friend Requests",
+                font=("Helvetica", 24)
+            ).pack(pady=40)
+
+            # Display pending requests
+            if response['pending_requests']:
+                for request in response['pending_requests']:
+                    sender_id = request['user_id']  # This is the user who sent the request
+
+                    tk.Label(
+                        self.root,
+                        text=f"{sender_id} wants to add you as a friend",
+                        font=("Helvetica", 14)
+                    ).pack(pady=10)
+
+                    # Accept button
+                    tk.Button(
+                        self.root,
+                        text=f"Accept {sender_id}",
+                        command=lambda sender_id=sender_id: self.accept_friend_request(sender_id),
+                        font=("Helvetica", 12),
+                        bg='#4CAF50',
+                        fg='black'
+                    ).pack(pady=5)
+
+                    # Reject button
+                    tk.Button(
+                        self.root,
+                        text=f"Reject {sender_id}",
+                        command=lambda sender_id=sender_id: self.reject_friend_request(sender_id),
+                        font=("Helvetica", 12),
+                        bg='#F44336',
+                        fg='black'
+                    ).pack(pady=5)
+            else:
+                # Show message when there are no pending requests
+                tk.Label(
+                    self.root,
+                    text="No pending friend requests",
+                    font=("Helvetica", 14)
+                ).pack(pady=20)
+
+            # Always show Back to Menu button
+            tk.Button(
+                self.root,
+                text="Back to Menu",
+                command=self.show_main_menu,
+                font=("Helvetica", 12),
+                bg='#2196F3',
+                fg='black'
+            ).pack(pady=20)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def accept_friend_request(self, friend_id):
+        """Accept a friend request"""
+        try:
+            self.sock.send(json.dumps({
+                'action': 'confirm_friend',
+                'user_id': self.current_user,
+                'friend_id': friend_id
+            }).encode())
+            
+            response = self.receive_response()
+            
+            if response['status'] == 'ok':
+                messagebox.showinfo("Success", f"You are now friends with {friend_id}")
+                self.show_main_menu()  # Return to the main menu
+            else:
+                messagebox.showerror("Error", response.get('message', 'Failed to confirm friend request'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def reject_friend_request(self, friend_id):
+        """Reject a friend request"""
+        try:
+            self.sock.send(json.dumps({
+                'action': 'reject_friend',
+                'user_id': self.current_user,
+                'friend_id': friend_id
+            }).encode())
+            
+            response = self.receive_response()
+            
+            if response['status'] == 'ok':
+                messagebox.showinfo("Success", f"You rejected the friend request from {friend_id}")
+                self.show_main_menu()  # Return to the main menu
+            else:
+                messagebox.showerror("Error", response.get('message', 'Failed to reject friend request'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_view_messages(self):
+        """Display message history with friends"""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Title
+        tk.Label(
+            self.root,
+            text="View Messages",
+            font=("Helvetica", 24)
+        ).pack(pady=20)
+
+        try:
+            # First get the friends list
+            self.sock.send(json.dumps({
+                'action': 'get_friends',
+                'user_id': self.current_user
+            }).encode())
+
+            response = self.receive_response()
+
+            if response['status'] != 'ok':
+                messagebox.showerror("Error", response.get('message', 'Failed to get friends list'))
+                return
+
+            friends = response['friends']
+
+            if not friends:
+                tk.Label(
+                    self.root,
+                    text="You don't have any friends yet",
+                    font=("Helvetica", 14)
+                ).pack(pady=20)
+            else:
+                # Create a frame for the messages area
+                messages_frame = tk.Frame(self.root)
+                messages_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+                # Create a canvas with scrollbar for the messages
+                canvas = tk.Canvas(messages_frame, bg='white')
+                scrollbar = tk.Scrollbar(messages_frame, orient="vertical", command=canvas.yview)
+                scrollable_frame = tk.Frame(canvas, bg='white')
+
+                scrollable_frame.bind(
+                    "<Configure>",
+                    lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+                )
+
+                canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+                canvas.configure(yscrollcommand=scrollbar.set)
+
+                # For each friend, get and display messages
+                for friend in friends:
+                    # Create a frame for this friend's messages
+                    friend_frame = tk.Frame(scrollable_frame, bg='white')
+                    friend_frame.pack(fill="x", pady=10)
+
+                    tk.Label(
+                        friend_frame,
+                        text=f"Messages with {friend}:",
+                        font=("Helvetica", 12, "bold"),
+                        bg='white'
+                    ).pack(anchor="w")
+
+                    # Get messages with this friend
+                    self.sock.send(json.dumps({
+                        'action': 'get_messages',
+                        'user_id': self.current_user,
+                        'friend_id': friend
+                    }).encode())
+
+                    msg_response = self.receive_response()
+
+                    if msg_response['status'] == 'ok':
+                        messages = msg_response['messages']
+                        if messages:
+                            for msg in messages:
+                                sender = msg['sender_id']
+                                message = msg['message']
+                                timestamp = msg['timestamp']
+                                
+                                # Format the message
+                                if sender == self.current_user:
+                                    prefix = "You: "
+                                    bg_color = '#E3F2FD'  # Light blue for sent messages
+                                else:
+                                    prefix = f"{sender}: "
+                                    bg_color = '#F5F5F5'  # Light grey for received messages
+
+                                # Create message bubble
+                                msg_frame = tk.Frame(friend_frame, bg=bg_color)
+                                msg_frame.pack(fill="x", pady=2, padx=10)
+                                
+                                tk.Label(
+                                    msg_frame,
+                                    text=f"{prefix}{message}",
+                                    wraplength=400,
+                                    justify="left",
+                                    bg=bg_color,
+                                    padx=10,
+                                    pady=5
+                                ).pack(anchor="w")
+                        else:
+                            tk.Label(
+                                friend_frame,
+                                text="No messages yet",
+                                font=("Helvetica", 10),
+                                bg='white'
+                            ).pack(pady=5)
+
+                # Pack the canvas and scrollbar
+                canvas.pack(side="left", fill="both", expand=True)
+                scrollbar.pack(side="right", fill="y")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+        # Back to Social Menu button
+        tk.Button(
+            self.root,
+            text="Back to Social Menu",
+            command=self.show_social_menu,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=20)
 
 if __name__ == "__main__":
     CrosswordClient()
