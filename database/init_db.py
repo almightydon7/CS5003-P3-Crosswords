@@ -43,6 +43,21 @@ CREATE TABLE IF NOT EXISTS crosswords (
 )
 ''')
 
+# Create a structured table to store individual clues related to a crossword
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS clues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    crossword_id INTEGER NOT NULL,           -- Foreign key to crosswords table
+    clue_text TEXT NOT NULL,                 -- Text of the clue
+    direction TEXT CHECK(direction IN ('across', 'down')),  -- Clue direction
+    x INTEGER NOT NULL,                      -- Starting row position
+    y INTEGER NOT NULL,                      -- Starting column position
+    answer TEXT NOT NULL,                    -- Correct answer
+    FOREIGN KEY (crossword_id) REFERENCES crosswords(id)
+)
+''')
+
+
 # Enhanced solutions table to track solving time
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS solutions (
