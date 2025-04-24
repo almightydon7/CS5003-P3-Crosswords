@@ -83,13 +83,6 @@ CREATE TABLE IF NOT EXISTS crossword_visible_squares (
 )
 ''')
 
-# Insert visible squares from the original JSON into the structured table
-for square in json.loads(simple_crossword["visibleSquares"]):
-    x, y = square
-    cursor.execute('''
-    INSERT INTO crossword_visible_squares (crossword_id, x, y)
-    VALUES (?, ?, ?)
-    ''', (crossword_id, x, y))
 
 # Enhanced solutions table to track solving time
 cursor.execute('''
@@ -293,6 +286,14 @@ if count == 0:
         
         # Get the inserted crossword ID
         crossword_id = cursor.lastrowid
+                # Insert visible squares into crossword_visible_squares
+        for square in json.loads(crossword["visibleSquares"]):
+            x, y = square
+            cursor.execute('''
+            INSERT INTO crossword_visible_squares (crossword_id, x, y)
+            VALUES (?, ?, ?)
+            ''', (crossword_id, x, y))
+
         
         # Add some fake leaderboard data
         for i in range(1, 6):  # Add 5 fake records
@@ -334,25 +335,56 @@ if count == 0:
             VALUES (?, ?, ?, ?)
             ''', (user_id, crossword_id, rating, f"Great puzzle! Solved in {solve_time:.1f} seconds."))
             
-            # Update user's solved puzzles count
-            cursor.execute('''
-            UPDATE users SET puzzles_solved = puzzles_solved + 1 WHERE id = ?
-            ''', (user_id,))
             
-        # Update the creator's created puzzles count
-        cursor.execute('''
-        UPDATE users SET puzzles_created = puzzles_created + 1 WHERE id = ?
-        ''', (admin_id,))
-        
-        # Update crossword times_solved count
-        cursor.execute('''
-        UPDATE crosswords SET times_solved = ? WHERE id = ?
-        ''', (5, crossword_id))
 
 # Insert test user if it doesn't exist
 cursor.execute('''
 INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)
 ''', ("test", "test"))
+
+# Trigger: Update users.puzzles_solved when a solution is submitted
+cursor.executescript('''
+
+CREATE TRIGGER IF NOT EXISTS update_user_puzzles_solved
+AFTER INSERT ON solutions
+WHEN NEW.solve_time IS NOT NULL
+BEGIN
+    UPDATE users
+    SET puzzles_solved = puzzles_solved + 1
+    WHERE id = NEW.user_id;
+END;
+
+''')
+
+# Trigger: Update users.puzzles_created when a crossword is added
+cursor.executescript('''
+
+CREATE TRIGGER IF NOT EXISTS update_user_puzzles_created
+AFTER INSERT ON crosswords
+WHEN NEW.creator_id IS NOT NULL
+BEGIN
+    UPDATE users
+    SET puzzles_created = puzzles_created + 1
+    WHERE id = NEW.creator_id;
+END;
+
+''')
+
+# Trigger: Update crosswords.times_solved when a solution is submitted
+cursor.executescript('''
+
+CREATE TRIGGER IF NOT EXISTS update_crossword_times_solved
+AFTER INSERT ON solutions
+WHEN NEW.solve_time IS NOT NULL
+BEGIN
+    UPDATE crosswords
+    SET times_solved = times_solved + 1
+    WHERE id = NEW.puzzle_id;
+END;
+
+
+''')
+
 
 # Commit and close the connection
 conn.commit()
