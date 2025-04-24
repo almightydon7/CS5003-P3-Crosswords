@@ -141,6 +141,31 @@ def init_db():
                 puzzle['clues']
             ))
     
+    # 创建好友关系表
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS friends (
+            user_id TEXT NOT NULL,
+            friend_id TEXT NOT NULL,
+            status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'confirmed')) NOT NULL,
+            PRIMARY KEY (user_id, friend_id),
+            FOREIGN KEY (user_id) REFERENCES users (username),
+            FOREIGN KEY (friend_id) REFERENCES users (username)
+        )
+    """)
+
+    # 创建消息表
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id TEXT NOT NULL,
+            receiver_id TEXT NOT NULL,
+            message TEXT NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sender_id) REFERENCES users (username),
+            FOREIGN KEY (receiver_id) REFERENCES users (username)
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("Database initialized successfully")

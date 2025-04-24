@@ -129,6 +129,16 @@ class CrosswordClient:
             bg='#2196F3',
             fg='black'
         ).pack(pady=10)
+
+        # Social button
+        tk.Button(
+            self.root,
+            text="Social",
+            command=self.show_social_menu,
+            font=("Helvetica", 12),
+            bg='#4CAF50',
+            fg='black'
+        ).pack(pady=10)
     
     def show_puzzle_list(self):
         """Display puzzle list"""
@@ -204,6 +214,8 @@ class CrosswordClient:
                 try:
                     # Try to parse the accumulated data
                     response = json.loads(data_buffer.decode())
+                    if 'pending_requests' not in response:
+                        response['pending_requests'] = []  # Add empty list if missing
                     return response
                 except json.JSONDecodeError as e:
                     if "Unterminated string" not in str(e):
@@ -219,6 +231,7 @@ class CrosswordClient:
             traceback.print_exc()
             raise
 
+
     def show_puzzle(self, puzzle_id):
         """Display puzzle"""
         
@@ -233,7 +246,6 @@ class CrosswordClient:
             
             print("Waiting for server response...")
             response = self.receive_response()
-            print(f"Received response: {response}")
             
             if response['status'] != 'ok':
                 messagebox.showerror("Error", response.get('message', 'Failed to get puzzle details'))
@@ -242,6 +254,7 @@ class CrosswordClient:
             print("\n=== Debug: Processing puzzle data ===")
             print(f"Grid: {response['grid']}")
             print(f"Clues: {response['clues']}")
+            print(f"Is system puzzle: {response.get('is_system_puzzle', False)}")
             
             # Clear existing widgets
             for widget in self.root.winfo_children():
@@ -287,7 +300,6 @@ class CrosswordClient:
                         entry = tk.Entry(cell_frame, width=2, font=("Helvetica", 20), bg='white', fg='black', justify='center')
                         entry.pack(expand=True, fill="both")
 
-                        # 限制输入只能为 1 个字符
                         def limit_to_one_char(event, entry=entry):
                             value = entry.get()
                             if len(value) > 1:
@@ -302,14 +314,9 @@ class CrosswordClient:
             # Force grid frame to update
             grid_frame.update_idletasks()
             
-            # Create clues frame
+            # Create clues frame with scrollbar
             clues_frame = tk.Frame(game_frame, bg='white')
             clues_frame.pack(side="right", padx=20, fill="both", expand=True)
-            
-            # Parse and display clues
-            clues_data = response['clues']
-            if isinstance(clues_data, str):
-                clues_data = json.loads(clues_data)
             
             # Create canvas for scrollable clues
             clues_canvas = tk.Canvas(clues_frame, bg='white', highlightthickness=0)
@@ -328,6 +335,13 @@ class CrosswordClient:
             clues_canvas.pack(side="left", fill="both", expand=True)
             clues_scrollbar.pack(side="right", fill="y")
             
+            # Parse clues data
+            clues_data = response['clues']
+            if isinstance(clues_data, str):
+                clues_data = json.loads(clues_data)
+            
+            is_system_puzzle = response.get('is_system_puzzle', False)
+            
             # Display across clues
             tk.Label(
                 clues_content,
@@ -337,36 +351,41 @@ class CrosswordClient:
                 fg='black'
             ).pack(anchor="w", pady=(0, 5))
             
+            # Prepare clue position maps
+            across_clue_map = []
+            down_clue_map = []
+
             for clue in clues_data['across']:
-                if isinstance(clue, dict):
-                    clue_text = f"{clue['number']}. {clue['text']}"
-                else:
-                    clue_text = clue
-                tk.Label(
-                    clues_content,
-                    text=clue_text,
-                    font=("Helvetica", 12),
-                    bg='white',
-                    fg='black',
-                    wraplength=300,
-                    justify="left"
-                ).pack(anchor="w", pady=2)
-            
-            # Display down clues
-            tk.Label(
-                clues_content,
-                text="Down:",
-                font=("Helvetica", 14, "bold"),
-                bg='white',
-                fg='black'
-            ).pack(anchor="w", pady=(15, 5))
-            
+                clue_text = f"{clue['number']}. {clue['text']}"
+                row = clue.get('row', 0)
+                col = clue.get('col', 0)
+                length = clue.get('len', 1)
+                positions = [(row, col + j) for j in range(length)]
+                across_clue_map.append((clue_text, positions))
+
             for clue in clues_data['down']:
-                if isinstance(clue, dict):
-                    clue_text = f"{clue['number']}. {clue['text']}"
-                else:
-                    clue_text = clue
-                tk.Label(
+                clue_text = f"{clue['number']}. {clue['text']}"
+                row = clue.get('row', 0)
+                col = clue.get('col', 0)
+                length = clue.get('len', 1)
+                positions = [(row + j, col) for j in range(length)]
+                down_clue_map.append((clue_text, positions))
+
+            # Define highlight function
+            def highlight_cells(positions, color="#FFFACD"):
+                for row in self.cells:
+                    for cell in row:
+                        if cell['state'] != 'disabled':
+                            cell.config(bg='white')
+                for r, c in positions:
+                    if 0 <= r < len(self.cells) and 0 <= c < len(self.cells[r]):
+                        cell = self.cells[r][c]
+                        if cell['state'] != 'disabled':
+                            cell.config(bg=color)
+
+            # Display clues and bind highlight
+            for clue_text, positions in across_clue_map + down_clue_map:
+                label = tk.Label(
                     clues_content,
                     text=clue_text,
                     font=("Helvetica", 12),
@@ -374,7 +393,10 @@ class CrosswordClient:
                     fg='black',
                     wraplength=300,
                     justify="left"
-                ).pack(anchor="w", pady=2)
+                )
+                label.pack(anchor="w", pady=2)
+                label.bind("<Button-1>", lambda e, pos=positions: highlight_cells(pos))
+
             
             # Create button frame
             button_frame = tk.Frame(main_frame, bg='white')
@@ -406,9 +428,8 @@ class CrosswordClient:
             self.update_timer()
             
         except Exception as e:
-            print(f"Error in show_puzzle: {str(e)}")  # Debug print
+            print(f"Error in show_puzzle: {str(e)}")
             print("Full error:")
-            import traceback
             traceback.print_exc()
             messagebox.showerror("Error", f"Network error: {str(e)}")
 
@@ -1084,6 +1105,346 @@ class CrosswordClient:
                     fg='black'
                 ).pack(side="left")
             
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_social_menu(self):
+        """Display social menu for adding friends, viewing friends, sending messages"""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Title
+        tk.Label(
+            self.root,
+            text="Social Menu",
+            font=("Helvetica", 24)
+        ).pack(pady=40)
+
+        # Add Friend button
+        tk.Button(
+            self.root,
+            text="Add Friend",
+            command=self.show_add_friend,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+        # View Friend Requests button
+        tk.Button(
+            self.root,
+            text="View Friend Requests",  # The button text to view pending requests
+            command=self.show_friend_requests,  # This function shows the requests
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+        # View Friends button
+        tk.Button(
+            self.root,
+            text="View Friends",
+            command=self.show_friends_list,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+        # Send Message button
+        tk.Button(
+            self.root,
+            text="Send Message",
+            command=self.show_send_message,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+        # Back to Menu button
+        tk.Button(
+            self.root,
+            text="Back to Menu",
+            command=self.show_main_menu,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=20)
+
+    def show_add_friend(self):
+        """Display add friend interface"""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Title
+        tk.Label(
+            self.root,
+            text="Add Friend",
+            font=("Helvetica", 24)
+        ).pack(pady=40)
+
+        # Friend username input
+        tk.Label(self.root, text="Friend's Username:").pack()
+        self.friend_username_entry = tk.Entry(self.root)
+        self.friend_username_entry.pack(pady=5)
+
+        # Add Friend button
+        tk.Button(
+            self.root,
+            text="Send Friend Request",
+            command=self.add_friend,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=20)
+
+        # Back to Menu button
+        tk.Button(
+            self.root,
+            text="Back to Menu",
+            command=self.show_main_menu,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+    def add_friend(self):
+        """Send friend request to server"""
+        friend_username = self.friend_username_entry.get()
+        if not friend_username:
+            messagebox.showerror("Error", "Please enter a friend's username")
+            return
+
+        try:
+            request_data = {
+                'action': 'add_friend',
+                'user_id': self.current_user,
+                'friend_id': friend_username
+            }
+
+            print(f"Debug: Sending friend request - {request_data}")  # Debug log
+            self.sock.send(json.dumps(request_data).encode())
+
+            response = self.receive_response()
+
+            print(f"Debug: Received response - {response}")  # Debug log
+
+            if response['status'] == 'ok':
+                messagebox.showinfo("Success", "Friend request sent!")
+            else:
+                messagebox.showerror("Error", response.get('message', 'Failed to send friend request'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_friends_list(self):
+        """Display list of friends"""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Title
+        tk.Label(
+            self.root,
+            text="Friends List",
+            font=("Helvetica", 24)
+        ).pack(pady=40)
+
+        try:
+            self.sock.send(json.dumps({
+                'action': 'get_friends',
+                'user_id': self.current_user
+            }).encode())
+
+            response = self.receive_response()
+
+            if response['status'] != 'ok':
+                messagebox.showerror("Error", response.get('message', 'Failed to get friends list'))
+                return
+
+            # Display friends list
+            friends_frame = tk.Frame(self.root)
+            friends_frame.pack(expand=True, fill="both", padx=40, pady=40)
+
+            for friend in response['friends']:
+                tk.Label(friends_frame, text=friend, font=("Helvetica", 12)).pack(pady=5)
+
+            # Back to Menu button
+            tk.Button(
+                self.root,
+                text="Back to Menu",
+                command=self.show_main_menu,
+                font=("Helvetica", 12),
+                bg='#2196F3',
+                fg='black'
+            ).pack(pady=20)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_send_message(self):
+        """Display send message interface"""
+        # Clear existing widgets
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Title
+        tk.Label(
+            self.root,
+            text="Send Message",
+            font=("Helvetica", 24)
+        ).pack(pady=40)
+
+        # Friend username input
+        tk.Label(self.root, text="Friend's Username:").pack()
+        self.message_friend_username_entry = tk.Entry(self.root)
+        self.message_friend_username_entry.pack(pady=5)
+
+        # Message input
+        tk.Label(self.root, text="Message:").pack()
+        self.message_entry = tk.Entry(self.root, width=40)
+        self.message_entry.pack(pady=5)
+
+        # Send Message button
+        tk.Button(
+            self.root,
+            text="Send Message",
+            command=self.send_message,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=20)
+
+        # Back to Menu button
+        tk.Button(
+            self.root,
+            text="Back to Menu",
+            command=self.show_main_menu,
+            font=("Helvetica", 12),
+            bg='#2196F3',
+            fg='black'
+        ).pack(pady=10)
+
+    def send_message(self):
+        """Send message to friend"""
+        friend_username = self.message_friend_username_entry.get()
+        message = self.message_entry.get()
+
+        if not friend_username or not message:
+            messagebox.showerror("Error", "Both fields are required")
+            return
+
+        try:
+            self.sock.send(json.dumps({
+                'action': 'send_message',
+                'sender_id': self.current_user,
+                'receiver_id': friend_username,
+                'message': message
+            }).encode())
+            
+            response = self.receive_response()
+            
+            if response['status'] == 'ok':
+                messagebox.showinfo("Success", "Message sent!")
+            else:
+                messagebox.showerror("Error", response.get('message', 'Failed to send message'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_friend_requests(self):
+        """Display all pending friend requests"""
+        try:
+            self.sock.send(json.dumps({
+                'action': 'get_friend_requests',
+                'user_id': self.current_user
+            }).encode())
+
+            response = self.receive_response()
+            print(f"Debug: Received pending friend requests response - {response}")  # Debug log
+
+            if response['status'] != 'ok':
+                messagebox.showerror("Error", response.get('message', 'Failed to get friend requests'))
+                return
+
+            # Clear existing widgets
+            for widget in self.root.winfo_children():
+                widget.destroy()
+
+            # Title
+            tk.Label(
+                self.root,
+                text="Pending Friend Requests",
+                font=("Helvetica", 24)
+            ).pack(pady=40)
+
+            # Display pending requests
+            for request in response['pending_requests']:
+                user_id = request['user_id']
+                friend_id = request['friend_id']
+
+                tk.Label(
+                    self.root,
+                    text=f"{friend_id} wants to add you as a friend",
+                    font=("Helvetica", 14)
+                ).pack(pady=10)
+
+                # Accept button
+                tk.Button(
+                    self.root,
+                    text=f"Accept {friend_id}",
+                    command=lambda friend_id=friend_id: self.accept_friend_request(friend_id),
+                    font=("Helvetica", 12),
+                    bg='#4CAF50',
+                    fg='black'
+                ).pack(pady=5)
+
+                # Reject button
+                tk.Button(
+                    self.root,
+                    text=f"Reject {friend_id}",
+                    command=lambda friend_id=friend_id: self.reject_friend_request(friend_id),
+                    font=("Helvetica", 12),
+                    bg='#F44336',
+                    fg='black'
+                ).pack(pady=5)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def accept_friend_request(self, friend_id):
+        """Accept a friend request"""
+        try:
+            self.sock.send(json.dumps({
+                'action': 'confirm_friend',
+                'user_id': self.current_user,
+                'friend_id': friend_id
+            }).encode())
+            
+            response = self.receive_response()
+            
+            if response['status'] == 'ok':
+                messagebox.showinfo("Success", f"You are now friends with {friend_id}")
+                self.show_main_menu()  # Return to the main menu
+            else:
+                messagebox.showerror("Error", response.get('message', 'Failed to confirm friend request'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def reject_friend_request(self, friend_id):
+        """Reject a friend request"""
+        try:
+            self.sock.send(json.dumps({
+                'action': 'reject_friend',
+                'user_id': self.current_user,
+                'friend_id': friend_id
+            }).encode())
+            
+            response = self.receive_response()
+            
+            if response['status'] == 'ok':
+                messagebox.showinfo("Success", f"You rejected the friend request from {friend_id}")
+                self.show_main_menu()  # Return to the main menu
+            else:
+                messagebox.showerror("Error", response.get('message', 'Failed to reject friend request'))
         except Exception as e:
             messagebox.showerror("Error", f"Network error: {str(e)}")
 

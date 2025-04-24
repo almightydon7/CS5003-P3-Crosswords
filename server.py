@@ -1,8 +1,8 @@
-# server.py
 import socket
 import threading
 import json
 import sqlite3
+import traceback
 from database import init_db, get_db_connection
 
 class CrosswordServer:
@@ -151,8 +151,20 @@ class CrosswordServer:
                 return self.handle_add_puzzle(request)
             elif action == 'get_statistics':
                 return self.handle_get_statistics(request)
+            elif action == 'add_friend':
+                return self.handle_add_friend(request)  # 添加好友
+            elif action == 'confirm_friend':
+                return self.handle_confirm_friend(request)  # 确认好友
+            elif action == 'send_message':
+                return self.handle_send_message(request)  # 发送消息
+            elif action == 'get_messages':
+                return self.handle_get_messages(request)  # 获取消息
+            elif action == 'get_friend_requests':
+                return self.handle_get_friends(request)  # 确保处理好友列表请求
+
             else:
                 return {'status': 'error', 'message': 'Unknown action type'}
+            
         except Exception as e:
             print(f"Error processing request: {str(e)}")
             print("Full error:")
@@ -219,7 +231,7 @@ class CrosswordServer:
             print(f"\n=== Debug: Getting puzzle details for ID {puzzle_id} ===")
             
             cursor.execute(
-                "SELECT grid, clues FROM puzzles WHERE id = ?",
+                "SELECT grid, clues, author FROM puzzles WHERE id = ?",
                 (puzzle_id,)
             )
             result = cursor.fetchone()
@@ -228,38 +240,133 @@ class CrosswordServer:
                 try:
                     raw_grid = result[0]
                     raw_clues = result[1]
+                    author = result[2]
                     
-                    print("Raw data from database:")
+                    print("\nRaw data from database:")
                     print(f"Grid: {raw_grid[:100]}...")
                     print(f"Clues: {raw_clues[:100]}...")
+                    print(f"Author: {author}")
                     
-                    # Ensure grid is valid JSON
-                    if isinstance(raw_grid, str):
-                        grid = json.loads(raw_grid)
-                    else:
-                        grid = raw_grid
+                    # Parse grid data
+                    try:
+                        if isinstance(raw_grid, str):
+                            grid = json.loads(raw_grid)
+                        else:
+                            grid = raw_grid
+                        print("\nParsed grid successfully")
+                    except json.JSONDecodeError as e:
+                        print(f"Error parsing grid: {str(e)}")
+                        return {'status': 'error', 'message': f'Invalid grid format: {str(e)}'}
+
+                    # Parse clues data
+                    try:
+                        if isinstance(raw_clues, str):
+                            clues = json.loads(raw_clues)
+                        else:
+                            clues = raw_clues
                         
-                    # Ensure clues is valid JSON
-                    if isinstance(raw_clues, str):
-                        clues = json.loads(raw_clues)
+                        # Ensure clues has the correct structure
+                        if not isinstance(clues, dict):
+                            clues = {"across": [], "down": []}
+                        if "across" not in clues:
+                            clues["across"] = []
+                        if "down" not in clues:
+                            clues["down"] = []
+                            
+                        print("\nParsed clues successfully")
+                        print(f"Clues structure: {json.dumps(clues, indent=2)[:200]}...")
+                    except json.JSONDecodeError as e:
+                        print(f"Error parsing clues: {str(e)}")
+                        return {'status': 'error', 'message': f'Invalid clues format: {str(e)}'}
+
+                    # Check if this is a system puzzle
+                    is_system_puzzle = author == 'system'
+                    grid_height = len(grid)
+                    grid_width = len(grid[0]) if grid_height > 0 else 0
+
+                    if is_system_puzzle:
+                        # For system puzzles, use simple row/column based positioning
+                        print("\nProcessing system puzzle...")
+                        
+                        # Process across clues
+                        for i, clue in enumerate(clues['across']):
+                            if isinstance(clue, dict):
+                                clue['row'] = i
+                                clue['col'] = 0
+                                clue['len'] = grid_width
+                            else:
+                                # Convert string clues to dict format
+                                clues['across'][i] = {
+                                    'number': i + 1,
+                                    'text': clue,
+                                    'row': i,
+                                    'col': 0,
+                                    'len': grid_width
+                                }
+                        
+                        # Process down clues
+                        for i, clue in enumerate(clues['down']):
+                            if isinstance(clue, dict):
+                                clue['row'] = 0
+                                clue['col'] = i
+                                clue['len'] = grid_height
+                            else:
+                                # Convert string clues to dict format
+                                clues['down'][i] = {
+                                    'number': i + 1,
+                                    'text': clue,
+                                    'row': 0,
+                                    'col': i,
+                                    'len': grid_height
+                                }
                     else:
-                        clues = raw_clues
+                        # For imported PUZ files, calculate positions based on black squares
+                        print("\nProcessing imported PUZ puzzle...")
+                        
+                        # Process across clues
+                        for i, clue in enumerate(clues['across']):
+                            if not isinstance(clue, dict):
+                                clues['across'][i] = {
+                                    'number': i + 1,
+                                    'text': clue
+                                }
+                            if 'number' not in clues['across'][i]:
+                                clues['across'][i]['number'] = i + 1
+                        
+                        # Process down clues
+                        for i, clue in enumerate(clues['down']):
+                            if not isinstance(clue, dict):
+                                clues['down'][i] = {
+                                    'number': i + 1,
+                                    'text': clue
+                                }
+                            if 'number' not in clues['down'][i]:
+                                clues['down'][i]['number'] = i + 1
+                        
+                        # Calculate positions for imported puzzles
+                        self._calculate_imported_puzzle_positions(grid, clues)
 
                     response = {
                         'status': 'ok',
                         'grid': grid,
-                        'clues': clues
+                        'clues': clues,
+                        'is_system_puzzle': is_system_puzzle
                     }
                     
-                    print("\nProcessed response:")
+                    print("\nFinal response:")
                     print(json.dumps(response, indent=2)[:200] + "...")
                     
                     return response
-                except json.JSONDecodeError as e:
-                    print(f"JSON Decode Error: {str(e)}")
-                    return {'status': 'error', 'message': f'Invalid puzzle data format: {str(e)}'}
+                    
+                except Exception as e:
+                    print(f"Error processing puzzle data: {str(e)}")
+                    print("Full error:")
+                    import traceback
+                    traceback.print_exc()
+                    return {'status': 'error', 'message': f'Error processing puzzle: {str(e)}'}
             else:
                 return {'status': 'error', 'message': 'Puzzle not found'}
+                
         except Exception as e:
             print(f"Error in handle_get_puzzle_detail: {str(e)}")
             print("Full error:")
@@ -268,7 +375,81 @@ class CrosswordServer:
             return {'status': 'error', 'message': str(e)}
         finally:
             conn.close()
-    
+
+    def _calculate_imported_puzzle_positions(self, grid, clues):
+        """Calculate positions for imported puzzle clues"""
+        grid_height = len(grid)
+        grid_width = len(grid[0]) if grid_height > 0 else 0
+        
+        # Calculate cell numbers
+        cell_numbers = {}
+        number = 1
+        for row in range(grid_height):
+            for col in range(grid_width):
+                cell = grid[row][col]
+                is_black = False
+                if isinstance(cell, dict):
+                    is_black = cell.get('is_black', False)
+                else:
+                    is_black = cell == '.'
+                
+                if not is_black:
+                    needs_number = False
+                    # Check if start of across word
+                    if col == 0 or (isinstance(grid[row][col-1], dict) and grid[row][col-1].get('is_black', True)):
+                        needs_number = True
+                    # Check if start of down word
+                    if row == 0 or (isinstance(grid[row-1][col], dict) and grid[row-1][col].get('is_black', True)):
+                        needs_number = True
+                    
+                    if needs_number:
+                        cell_numbers[(row, col)] = number
+                        number += 1
+        
+        # Process across clues
+        for clue in clues['across']:
+            if isinstance(clue, dict) and 'number' in clue:
+                # Find matching cell number
+                for (row, col), num in cell_numbers.items():
+                    if num == clue['number']:
+                        # Calculate length
+                        length = 0
+                        while col + length < grid_width:
+                            next_cell = grid[row][col + length]
+                            if isinstance(next_cell, dict):
+                                if next_cell.get('is_black', False):
+                                    break
+                            elif next_cell == '.':
+                                break
+                            length += 1
+                        
+                        clue['row'] = row
+                        clue['col'] = col
+                        clue['len'] = length
+                        break
+        
+        # Process down clues
+        for clue in clues['down']:
+            if isinstance(clue, dict) and 'number' in clue:
+                # Find matching cell number
+                for (row, col), num in cell_numbers.items():
+                    if num == clue['number']:
+                        # Calculate length
+                        length = 0
+                        while row + length < grid_height:
+                            next_cell = grid[row + length][col]
+                            if isinstance(next_cell, dict):
+                                if next_cell.get('is_black', False):
+                                    break
+                            elif next_cell == '.':
+                                break
+                            length += 1
+                        
+                        clue['row'] = row
+                        clue['col'] = col
+                        clue['len'] = length
+                        break
+
     def handle_submit_solution(self, request):
         """Handle submitted answer"""
         conn = get_db_connection()
@@ -473,6 +654,225 @@ class CrosswordServer:
             return {'status': 'error', 'message': str(e)}
         finally:
             conn.close()
+    
+    def handle_send_message(self, request):
+        """Handle sending a message from one user to another"""
+        try:
+            sender_id = request['sender_id']
+            receiver_id = request['receiver_id']
+            message = request['message']
+
+            if not sender_id or not receiver_id or not message:
+                return {'status': 'error', 'message': 'sender_id, receiver_id, and message are required'}
+
+            # Save the message to the database
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO messages (sender_id, receiver_id, message) VALUES (?, ?, ?)",
+                (sender_id, receiver_id, message)
+            )
+            conn.commit()
+            conn.close()
+
+            return {'status': 'ok', 'message': 'Message sent successfully'}
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+
+
+    def handle_add_friend(self, request):
+        """Handle adding a friend (send friend request)"""
+        try:
+            user_id = request['user_id']
+            friend_id = request['friend_id']
+
+            if not user_id or not friend_id:
+                return {'status': 'error', 'message': 'Both user_id and friend_id are required'}
+
+            # Check if the user and friend exist in the database
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT * FROM users WHERE username = ?", (user_id,))
+            user = cursor.fetchone()
+            
+            cursor.execute("SELECT * FROM users WHERE username = ?", (friend_id,))
+            friend = cursor.fetchone()
+
+            if not user:
+                return {'status': 'error', 'message': 'User does not exist'}
+            if not friend:
+                return {'status': 'error', 'message': 'Friend does not exist'}
+
+            # Add the friend request to the database
+            cursor.execute(
+                "INSERT OR IGNORE INTO friends (user_id, friend_id, status) VALUES (?, ?, 'pending')",
+                (user_id, friend_id)
+            )
+            conn.commit()
+            # Debug log to confirm data insertion
+            print(f"Debug: Friend request added - {user_id} -> {friend_id}, status: pending")
+                  
+            conn.close()
+
+            return {'status': 'ok', 'message': 'Friend request sent'}
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+
+    def add_friend(self, request):
+        """Handle adding a friend (send friend request)"""
+        try:
+            user_id = request['user_id']
+            friend_id = request['friend_id']
+
+            if not user_id or not friend_id:
+                return {'status': 'error', 'message': 'Both user_id and friend_id are required'}
+
+            # Add friend request to the database (status can be 'pending' initially)
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR IGNORE INTO friends (user_id, friend_id, status) VALUES (?, ?, 'pending')",
+                (user_id, friend_id)
+            )
+            conn.commit()
+            conn.close()
+
+            return {'status': 'ok', 'message': 'Friend request sent'}
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+
+
+    def handle_confirm_friend(self, request):
+        """Handle confirming a friend request"""
+        try:
+            user_id = request['user_id']
+            friend_id = request['friend_id']
+
+            if not user_id or not friend_id:
+                return {'status': 'error', 'message': 'Both user_id and friend_id are required'}
+
+            # Confirm the friend request in the database by updating the status to 'confirmed'
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                "UPDATE friends SET status = 'confirmed' WHERE user_id = ? AND friend_id = ?",
+                (user_id, friend_id)
+            )
+            conn.commit()
+            conn.close()
+
+            return {'status': 'ok', 'message': f'{friend_id} confirmed as a friend of {user_id}'}
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+        
+    def handle_get_friends(self, request):
+        """Handle fetching the user's friends list"""
+        try:
+            user_id = request['user_id']
+
+            if not user_id:
+                return {'status': 'error', 'message': 'user_id is required'}
+
+            # Fetch the friends from the database
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT friend_id FROM friends
+                WHERE user_id = ? AND status = 'confirmed'
+            """, (user_id,))
+            friends = cursor.fetchall()
+            conn.close()
+
+            # Extract friend usernames from query results
+            friend_list = [friend[0] for friend in friends]
+
+            return {'status': 'ok', 'friends': friend_list}
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+        
+    def handle_get_friend_requests(self, request):
+        """Handle fetching all pending friend requests for a user"""
+        try:
+            user_id = request['user_id']
+
+            if not user_id:
+                return {'status': 'error', 'message': 'user_id is required'}
+
+            # Retrieve pending friend requests for the user
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT user_id, friend_id FROM friends WHERE friend_id = ? AND status = 'pending'",
+                (user_id,)
+            )
+            pending_requests = cursor.fetchall()
+            conn.close()
+            
+            # Debug log to show the pending requests
+            print(f"Debug: Retrieved pending friend requests for {user_id}: {pending_requests}")
+
+            # Return the pending friend requests
+            return {
+                'status': 'ok',
+                'pending_requests': [{'user_id': req[0], 'friend_id': req[1]} for req in pending_requests]
+            }
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+
+    def handle_reject_friend(self, request):
+        """Handle rejecting a friend request"""
+        try:
+            user_id = request['user_id']
+            friend_id = request['friend_id']
+
+            if not user_id or not friend_id:
+                return {'status': 'error', 'message': 'Both user_id and friend_id are required'}
+
+            # Remove the friend request from the database
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM friends WHERE user_id = ? AND friend_id = ? AND status = 'pending'",
+                (friend_id, user_id)
+            )
+            conn.commit()
+            conn.close()
+
+            return {'status': 'ok', 'message': f'{friend_id} rejected as a friend'}
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+
+    def handle_get_messages(self, request):
+        """Handle fetching all messages between two users"""
+        try:
+            user_id = request['user_id']
+            friend_id = request['friend_id']
+
+            if not user_id or not friend_id:
+                return {'status': 'error', 'message': 'Both user_id and friend_id are required'}
+
+            # Retrieve messages between user_id and friend_id
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                "SELECT sender_id, receiver_id, message, timestamp FROM messages "
+                "WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?) "
+                "ORDER BY timestamp",
+                (user_id, friend_id, friend_id, user_id)
+            )
+            messages = cursor.fetchall()
+            conn.close()
+
+            # Return the messages
+            return {
+                'status': 'ok',
+                'messages': [{'sender_id': msg[0], 'receiver_id': msg[1], 'message': msg[2], 'timestamp': msg[3]} for msg in messages]
+            }
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
 
 if __name__ == "__main__":
     server = CrosswordServer()
