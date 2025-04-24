@@ -72,6 +72,24 @@ CREATE TABLE IF NOT EXISTS crossword_words (
 )
 ''')
 
+# Create a table to store visible squares of each crossword puzzle
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS crossword_visible_squares (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    crossword_id INTEGER NOT NULL,      -- Foreign key to crosswords
+    x INTEGER NOT NULL,                 -- Row coordinate of the visible square
+    y INTEGER NOT NULL,                 -- Column coordinate of the visible square
+    FOREIGN KEY (crossword_id) REFERENCES crosswords(id)
+)
+''')
+
+# Insert visible squares from the original JSON into the structured table
+for square in json.loads(simple_crossword["visibleSquares"]):
+    x, y = square
+    cursor.execute('''
+    INSERT INTO crossword_visible_squares (crossword_id, x, y)
+    VALUES (?, ?, ?)
+    ''', (crossword_id, x, y))
 
 # Enhanced solutions table to track solving time
 cursor.execute('''
