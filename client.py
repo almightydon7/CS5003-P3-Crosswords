@@ -130,6 +130,7 @@ class CrosswordClient:
             fg='black'
         ).pack(pady=10)
 
+
         # Social button
         tk.Button(
             self.root,
@@ -139,11 +140,13 @@ class CrosswordClient:
             bg='#4CAF50',
             fg='black'
         ).pack(pady=10)
+
     
     def show_puzzle_list(self):
         """Display puzzle list"""
         try:
             self.sock.send(json.dumps({'action': 'get_puzzles'}).encode())
+
             response = self.receive_response()
             
             if response['status'] != 'ok':
@@ -231,7 +234,6 @@ class CrosswordClient:
             traceback.print_exc()
             raise
 
-
     def show_puzzle(self, puzzle_id):
         """Display puzzle"""
         
@@ -239,6 +241,7 @@ class CrosswordClient:
 
         try:
             print(f"\n=== Debug: Requesting puzzle {puzzle_id} ===")
+
             self.sock.send(json.dumps({
                 'action': 'get_puzzle_detail',
                 'puzzle_id': puzzle_id
@@ -246,6 +249,7 @@ class CrosswordClient:
             
             print("Waiting for server response...")
             response = self.receive_response()
+
             
             if response['status'] != 'ok':
                 messagebox.showerror("Error", response.get('message', 'Failed to get puzzle details'))
@@ -255,7 +259,7 @@ class CrosswordClient:
             print(f"Grid: {response['grid']}")
             print(f"Clues: {response['clues']}")
             print(f"Is system puzzle: {response.get('is_system_puzzle', False)}")
-            
+
             # Clear existing widgets
             for widget in self.root.winfo_children():
                 widget.destroy()
@@ -280,6 +284,7 @@ class CrosswordClient:
             self.cells = []
             for i, row in enumerate(grid_data):
                 cell_row = []
+
                 for j, cell in enumerate(row):
                     # Create cell frame
                     cell_frame = tk.Frame(grid_frame, width=40, height=40, bg='white')
@@ -308,7 +313,7 @@ class CrosswordClient:
                         entry.bind('<KeyRelease>', limit_to_one_char)
 
                     cell_row.append(entry)
-                
+
                 self.cells.append(cell_row)
             
             # Force grid frame to update
@@ -355,7 +360,6 @@ class CrosswordClient:
                 positions = [(row, col + j) for j in range(length)]
                 across_clue_map.append((clue_text, positions))
 
-
             for clue in clues_data['down']:
                 clue_text = f"{clue['number']}. {clue['text']}"
                 row = clue.get('row', 0)
@@ -379,6 +383,7 @@ class CrosswordClient:
             # Display across clues
             tk.Label(
                 clues_content,
+
                 text="Across:",
                 font=("Helvetica", 14, "bold"),
                 bg='white',
@@ -389,11 +394,13 @@ class CrosswordClient:
                 label = tk.Label(
                     clues_content,
                     text=clue_text,
+
                     font=("Helvetica", 12),
                     bg='white',
                     fg='black',
                     wraplength=300,
                     justify="left"
+
                 )
                 label.pack(anchor="w", pady=2)
                 label.bind("<Button-1>", lambda e, pos=positions: highlight_cells(pos))
@@ -401,16 +408,19 @@ class CrosswordClient:
             # Display down clues
             tk.Label(
                 clues_content,
+
                 text="Down:",
                 font=("Helvetica", 14, "bold"),
                 bg='white',
                 fg='black'
+
             ).pack(anchor="w", pady=(20, 5))
 
             for clue_text, positions in down_clue_map:
                 label = tk.Label(
                     clues_content,
                     text=clue_text,
+
                     font=("Helvetica", 12),
                     bg='white',
                     fg='black',
@@ -419,6 +429,7 @@ class CrosswordClient:
                 )
                 label.pack(anchor="w", pady=2)
                 label.bind("<Button-1>", lambda e, pos=positions: highlight_cells(pos))
+
 
             # Create button frame
             button_frame = tk.Frame(main_frame, bg='white')
@@ -471,6 +482,7 @@ class CrosswordClient:
             for row in self.cells:
                 solution_row = []
                 for cell in row:
+
                     value = cell.get().strip().upper() if cell['state'] != 'disabled' else ''
                     solution_row.append(value)
                 solution.append(solution_row)
@@ -478,15 +490,18 @@ class CrosswordClient:
             # Convert solution to JSON string
             solution_json = json.dumps(solution)
             
+
             self.sock.send(json.dumps({
                 'action': 'submit_solution',
                 'username': self.current_user,
                 'puzzle_id': puzzle_id,
+
                 'solution': solution_json,
                 'time_taken': elapsed_time
             }).encode())
             
             response = self.receive_response()
+
             
             if response['status'] == 'ok':
                 messagebox.showinfo("Success", "Correct answer!")
@@ -495,9 +510,11 @@ class CrosswordClient:
                 messagebox.showerror("Error", response.get('message', 'Incorrect answer, please try again'))
                 
         except Exception as e:
+
             print(f"Error in submit_solution: {str(e)}")
             print("Full error:")
             traceback.print_exc()
+
             messagebox.showerror("Error", f"Network error: {str(e)}")
     
     def show_add_puzzle(self):
@@ -511,6 +528,7 @@ class CrosswordClient:
         main_frame.pack(expand=True, fill="both", padx=40, pady=20)
         
         # Create top frame for title, import button and return button
+
         top_frame = tk.Frame(main_frame, bg='white')
         top_frame.pack(fill="x", pady=10)
         
@@ -532,6 +550,7 @@ class CrosswordClient:
             bg='#2196F3',
             fg='black'
         ).pack(side="right", padx=20)
+        
 
         # Create content frame
         content_frame = tk.Frame(main_frame, bg='white')
@@ -905,6 +924,7 @@ class CrosswordClient:
                     messagebox.showerror("Error", response.get('message', 'Failed to add puzzle'))
                     
             except Exception as e:
+
                 print(f"\nError in validate_and_submit: {str(e)}")
                 print("Full error:")
                 import traceback
@@ -924,6 +944,7 @@ class CrosswordClient:
             fg='black',
             padx=20
         ).pack(side="left", padx=5)
+
     
     def show_statistics(self):
         """Display statistics"""
@@ -1052,6 +1073,7 @@ class CrosswordClient:
             
             tk.Label(
                 headers_frame,
+
                 text="Fastest Time (s)",
                 font=("Helvetica", 12, "bold"),
                 width=15,
@@ -1070,6 +1092,7 @@ class CrosswordClient:
 
             tk.Label(
                 headers_frame,
+
                 text="Puzzles Created",
                 font=("Helvetica", 12, "bold"),
                 width=15,
@@ -1102,6 +1125,7 @@ class CrosswordClient:
                 
                 tk.Label(
                     user_frame,
+
                     text=str(user_stats.get('fastest_time', 'N/A')),
                     font=("Helvetica", 12),
                     width=15,
@@ -1120,6 +1144,7 @@ class CrosswordClient:
 
                 tk.Label(
                     user_frame,
+
                     text=str(user_stats['puzzles_created']),
                     font=("Helvetica", 12),
                     width=15,

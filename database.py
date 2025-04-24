@@ -55,6 +55,7 @@ def init_db():
                 'title': 'Simple Crossword 1',
                 'author': 'system',
                 'grid': json.dumps([
+
                     [
                         {"char": "T", "is_black": False},
                         {"char": "", "is_black": False},
@@ -86,6 +87,7 @@ def init_db():
                         {"number": 1, "text": "To lightly touch"},
                         {"number": 2, "text": "Natural rock with metal"},
                         {"number": 3, "text": "A writing instrument"}
+
                     ]
                 })
             },
@@ -93,6 +95,7 @@ def init_db():
                 'title': 'Simple Crossword 2',
                 'author': 'system',
                 'grid': json.dumps([
+
                     [
                         {"char": "F", "is_black": False},
                         {"char": "", "is_black": False},
@@ -124,6 +127,7 @@ def init_db():
                         {"number": 1, "text": "Someone who supports a person/team"},
                         {"number": 2, "text": "A negative word"},
                         {"number": 3, "text": "Clean and tidy"}
+
                     ]
                 })
             }
@@ -141,6 +145,7 @@ def init_db():
                 puzzle['clues']
             ))
     
+
     # 创建好友关系表
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS friends (

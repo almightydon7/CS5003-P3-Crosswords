@@ -33,6 +33,7 @@ class CrosswordServer:
         """Handle client connection"""
         try:
             while True:
+
                 # Initialize buffer for data collection
                 data_buffer = b""
                 
@@ -107,11 +108,13 @@ class CrosswordServer:
             print("Full error:")
             import traceback
             traceback.print_exc()
+
         finally:
             client_socket.close()
     
     def process_request(self, request):
         """Process client request"""
+
         try:
             action = request.get('action')
             
@@ -174,6 +177,7 @@ class CrosswordServer:
             print("Full error:")
             traceback.print_exc()
             return {'status': 'error', 'message': str(e)}
+
     
     def handle_login(self, request):
         """Handle login request"""
@@ -232,6 +236,7 @@ class CrosswordServer:
         
         try:
             puzzle_id = request['puzzle_id']
+
             print(f"\n=== Debug: Getting puzzle details for ID {puzzle_id} ===")
             
             cursor.execute(
@@ -518,13 +523,15 @@ class CrosswordServer:
             conn.close()
 
     def handle_add_puzzle(self, request):
+
         conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
+
             print("\n=== Debug: Processing add puzzle request ===")
             print(f"Raw request data: {request}")
-            
+
             title = request['title']
             author = request['author']
             grid = request['grid']
@@ -564,13 +571,14 @@ class CrosswordServer:
                 """,
                 (title, author, grid, answer, clues)
             )
-            
+
             cursor.execute(
                 "UPDATE users SET puzzles_created = puzzles_created + 1 WHERE username = ?",
                 (author,)
             )
             
             conn.commit()
+
             print("\nSuccessfully added puzzle to database")
             return {'status': 'ok', 'message': 'Puzzle added successfully'}
         except Exception as e:
@@ -578,6 +586,7 @@ class CrosswordServer:
             print("Full error:")
             import traceback
             traceback.print_exc()
+
             return {'status': 'error', 'message': str(e)}
         finally:
             conn.close()
@@ -618,6 +627,7 @@ class CrosswordServer:
                 FROM users 
                 ORDER BY puzzles_solved DESC, puzzles_created DESC
             """)
+
             user_rows = cursor.fetchall()
 
             cursor.execute("""
@@ -941,6 +951,7 @@ class CrosswordServer:
         except Exception as e:
             print(f"Debug: Error in handle_get_messages: {str(e)}")
             return {'status': 'error', 'message': str(e)}
+
 
 if __name__ == "__main__":
     server = CrosswordServer()
