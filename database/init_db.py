@@ -57,6 +57,21 @@ CREATE TABLE IF NOT EXISTS clues (
 )
 ''')
 
+# Create a structured table to store words with positions and direction
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS crossword_words (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    crossword_id INTEGER NOT NULL,              -- Foreign key to crosswords
+    word TEXT NOT NULL,                         -- Word used in the puzzle
+    direction TEXT CHECK(direction IN ('across', 'down')),  -- Word direction
+    start_x INTEGER NOT NULL,                   -- Start row
+    start_y INTEGER NOT NULL,                   -- Start column
+    end_x INTEGER NOT NULL,                     -- End row
+    end_y INTEGER NOT NULL,                     -- End column
+    FOREIGN KEY (crossword_id) REFERENCES crosswords(id)
+)
+''')
+
 
 # Enhanced solutions table to track solving time
 cursor.execute('''
