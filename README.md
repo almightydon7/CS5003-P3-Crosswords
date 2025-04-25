@@ -40,6 +40,7 @@ This application allows users to:
   - tkinter (usually included with Python)
   - sqlite3 (usually included with Python)
   - puzpy (install via `pip install puzpy` for .PUZ file import support)
+  - ensure puzpy is up to date (install or upgrade via `pip install --upgrade puzpy`)
 
 ### Setup
 1. Clone the repository:
