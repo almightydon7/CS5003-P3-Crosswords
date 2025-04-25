@@ -168,8 +168,11 @@ class CrosswordServer:
                 return self.handle_get_friends(request)
             elif action == 'reject_friend':
                 return self.handle_reject_friend(request)
+<<<<<<< HEAD
             elif action == 'get_historical_rankings':
                 return self.handle_get_historical_rankings(request)
+=======
+>>>>>>> main
             else:
                 print(f"Debug: Unknown action type received: {action}")
                 return {'status': 'error', 'message': 'Unknown action type'}
@@ -509,6 +512,7 @@ class CrosswordServer:
                 )
                 
                 if time_taken is not None:
+<<<<<<< HEAD
                     # Calculate the rank among all solvers of this puzzle
                     cursor.execute(
                         """
@@ -529,10 +533,13 @@ class CrosswordServer:
                     total_solvers = total_result[0] if total_result else 0
                     
                     # Insert into puzzle_records
+=======
+>>>>>>> main
                     cursor.execute(
                         "INSERT INTO puzzle_records (username, puzzle_id, time_taken) VALUES (?, ?, ?)",
                         (username, puzzle_id, time_taken)
                     )
+<<<<<<< HEAD
                     
                     # Insert into historical_rankings
                     cursor.execute(
@@ -556,6 +563,11 @@ class CrosswordServer:
                     }
                 else:
                     return {'status': 'ok', 'message': 'Correct answer!'}
+=======
+
+                conn.commit()
+                return {'status': 'ok', 'message': 'Correct answer!'}
+>>>>>>> main
             else:
                 return {'status': 'error', 'message': 'Incorrect answer, please try again'}
                 
@@ -994,6 +1006,7 @@ class CrosswordServer:
             print(f"Debug: Error in handle_get_messages: {str(e)}")
             return {'status': 'error', 'message': str(e)}
 
+<<<<<<< HEAD
     def handle_get_historical_rankings(self, request):
         """Handle fetching historical rankings for a user"""
         conn = get_db_connection()
@@ -1061,6 +1074,8 @@ class CrosswordServer:
         finally:
             conn.close()
 
+=======
+>>>>>>> main
 
 if __name__ == "__main__":
     server = CrosswordServer()
