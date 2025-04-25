@@ -413,6 +413,7 @@ if count == 0:
         cursor.execute('''
         UPDATE crosswords SET times_solved = ? WHERE id = ?
         ''', (5, crossword_id))
+main
 
 cursor.execute('''
 INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)
