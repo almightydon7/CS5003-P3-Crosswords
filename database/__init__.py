@@ -1,5 +1,5 @@
 import sqlite3
-from .init_db import initialize_database
+import importlib
 
 def get_db_connection():
     """Get a connection to the SQLite database.
@@ -11,10 +11,10 @@ def get_db_connection():
     return conn
 
 def init_db():
-    """Initialize the database with tables and sample data.
-    This function is called by the server at startup.
-    """
-    initialize_database()
+    """Initialize the database by running the init_db script."""
+    # Dynamically reload to execute the module top-level code
+    import database.init_db
+    importlib.reload(database.init_db)
 
 # Import the DatabaseManager class for extended database operations
 from .manager_db import DatabaseManager
