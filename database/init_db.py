@@ -172,6 +172,60 @@ CREATE TABLE IF NOT EXISTS historical_rankings (
 )
 ''')
 
+# Create puzzle_records table for tracking puzzle solves
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS puzzle_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    puzzle_id INTEGER,
+    time_taken REAL,
+    solved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (username) REFERENCES users(username),
+    FOREIGN KEY (puzzle_id) REFERENCES crosswords(id)
+)
+''')
+
+# Create friends table for managing friend relationships
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS friends (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    friend_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(username),
+    FOREIGN KEY (friend_id) REFERENCES users(username)
+)
+''')
+
+# Create messages table for user messaging
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id TEXT NOT NULL,
+    receiver_id TEXT NOT NULL,
+    message TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    read BOOLEAN DEFAULT 0,
+    FOREIGN KEY (sender_id) REFERENCES users(username),
+    FOREIGN KEY (receiver_id) REFERENCES users(username)
+)
+''')
+
+# Create puzzles table that matches the server.py code
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS puzzles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL,
+    grid TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    clues TEXT NOT NULL,
+    times_solved INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+''')
+
 # Add preset crosswords
 sample_crosswords = [
     {
@@ -404,4 +458,3 @@ conn.commit()
 conn.close()
 
 print("Database initialized!")
-
