@@ -309,6 +309,7 @@ class CrosswordServer:
 
             print(f"\n=== Debug: Getting puzzle details for ID {puzzle_id} ===")
             
+            # First check data in puzzles table
             cursor.execute(
                 "SELECT grid, clues, author FROM puzzles WHERE id = ?",
                 (puzzle_id,)
@@ -344,6 +345,50 @@ class CrosswordServer:
                         else:
                             clues = raw_clues
                         
+                        # If clues is empty, try to get from crosswords table
+                        if (not isinstance(clues, dict)) or (not clues.get('across') and not clues.get('down')):
+                            print("Clues data empty or invalid, attempting to get from crosswords table")
+                            cursor.execute(
+                                "SELECT clues FROM crosswords WHERE id = ?",
+                                (puzzle_id,)
+                            )
+                            crossword_result = cursor.fetchone()
+                            if crossword_result:
+                                raw_crossword_clues = crossword_result[0]
+                                if isinstance(raw_crossword_clues, str):
+                                    crossword_clues = json.loads(raw_crossword_clues)
+                                else:
+                                    crossword_clues = raw_crossword_clues
+                                
+                                # Switch to client format
+                                formatted_clues = {"across": [], "down": []}
+                                for clue in crossword_clues:
+                                    if clue.get('direction') == 'across':
+                                        formatted_clues['across'].append({
+                                            'number': clue.get('id', 1),
+                                            'text': clue.get('text', 'No clue text'),
+                                            'row': clue.get('position', [0, 0])[0],
+                                            'col': clue.get('position', [0, 0])[1],
+                                            'len': len(clue.get('answer', '')) if 'answer' in clue else 5
+                                        })
+                                    elif clue.get('direction') == 'down':
+                                        formatted_clues['down'].append({
+                                            'number': clue.get('id', 1),
+                                            'text': clue.get('text', 'No clue text'),
+                                            'row': clue.get('position', [0, 0])[0],
+                                            'col': clue.get('position', [0, 0])[1],
+                                            'len': len(clue.get('answer', '')) if 'answer' in clue else 5
+                                        })
+                                
+                                clues = formatted_clues
+                                
+                                # 更新puzzles表中的clues
+                                cursor.execute(
+                                    "UPDATE puzzles SET clues = ? WHERE id = ?",
+                                    (json.dumps(clues), puzzle_id)
+                                )
+                                conn.commit()
+                        
                         # Ensure clues has the correct structure
                         if not isinstance(clues, dict):
                             clues = {"across": [], "down": []}
@@ -357,6 +402,54 @@ class CrosswordServer:
                     except json.JSONDecodeError as e:
                         print(f"Error parsing clues: {str(e)}")
                         return {'status': 'error', 'message': f'Invalid clues format: {str(e)}'}
+
+                    # Add default clues for sample puzzles if empty
+                    if len(clues["across"]) == 0 and len(clues["down"]) == 0:
+                        # Computer Science Basics
+                        if puzzle_id == 1:
+                            clues = {
+                                "across": [
+                                    {"number": 1, "text": "Foundation of computer science and programming", "row": 0, "col": 0, "len": 5},
+                                    {"number": 2, "text": "Memory used to speed up data access", "row": 2, "col": 0, "len": 5},
+                                    {"number": 3, "text": "Find and fix errors in code", "row": 4, "col": 0, "len": 5}
+                                ],
+                                "down": [
+                                    {"number": 1, "text": "A data structure that stores elements of the same type", "row": 0, "col": 0, "len": 5},
+                                    {"number": 2, "text": "A blueprint for creating objects in OOP", "row": 0, "col": 2, "len": 5}
+                                ]
+                            }
+                        # Artificial Intelligence
+                        elif puzzle_id == 2:
+                            clues = {
+                                "across": [
+                                    {"number": 1, "text": "Neural network type used for image processing", "row": 0, "col": 0, "len": 3},
+                                    {"number": 2, "text": "Machine processing of human languages", "row": 1, "col": 1, "len": 3}
+                                ],
+                                "down": [
+                                    {"number": 1, "text": "Popular generative AI model family", "row": 0, "col": 0, "len": 3},
+                                    {"number": 2, "text": "Deep Neural Network", "row": 0, "col": 3, "len": 3}
+                                ]
+                            }
+                        # St Andrews, Scotland
+                        elif puzzle_id == 3:
+                            clues = {
+                                "across": [
+                                    {"number": 1, "text": "St Andrews has ruins of a medieval one", "row": 0, "col": 0, "len": 6},
+                                    {"number": 2, "text": "Harbor structure in St Andrews", "row": 2, "col": 2, "len": 4},
+                                    {"number": 3, "text": "The famous '___ Course' in St Andrews", "row": 5, "col": 3, "len": 3}
+                                ],
+                                "down": [
+                                    {"number": 1, "text": "What many have done on the Old Course", "row": 0, "col": 3, "len": 6},
+                                    {"number": 2, "text": "North ___, body of water beside St Andrews", "row": 2, "col": 5, "len": 3}
+                                ]
+                            }
+                        
+                        # Update clues in puzzles table
+                        cursor.execute(
+                            "UPDATE puzzles SET clues = ? WHERE id = ?",
+                            (json.dumps(clues), puzzle_id)
+                        )
+                        conn.commit()
 
                     # Check if this is a system puzzle
                     is_system_puzzle = author == 'system'
