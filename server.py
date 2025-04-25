@@ -309,7 +309,7 @@ class CrosswordServer:
 
             print(f"\n=== Debug: Getting puzzle details for ID {puzzle_id} ===")
             
-            # 首先检查puzzles表中的数据
+
             cursor.execute(
                 "SELECT grid, clues, author FROM puzzles WHERE id = ?",
                 (puzzle_id,)
@@ -345,7 +345,7 @@ class CrosswordServer:
                         else:
                             clues = raw_clues
                         
-                        # 如果clues是空的，尝试从crosswords表获取
+
                         if (not isinstance(clues, dict)) or (not clues.get('across') and not clues.get('down')):
                             print("Clues data empty or invalid, attempting to get from crosswords table")
                             cursor.execute(
@@ -360,7 +360,6 @@ class CrosswordServer:
                                 else:
                                     crossword_clues = raw_crossword_clues
                                 
-                                # 转换为客户端期望的格式
                                 formatted_clues = {"across": [], "down": []}
                                 for clue in crossword_clues:
                                     if clue.get('direction') == 'across':
@@ -382,7 +381,6 @@ class CrosswordServer:
                                 
                                 clues = formatted_clues
                                 
-                                # 更新puzzles表中的clues
                                 cursor.execute(
                                     "UPDATE puzzles SET clues = ? WHERE id = ?",
                                     (json.dumps(clues), puzzle_id)
@@ -444,7 +442,6 @@ class CrosswordServer:
                                 ]
                             }
                         
-                        # 更新puzzles表中的clues
                         cursor.execute(
                             "UPDATE puzzles SET clues = ? WHERE id = ?",
                             (json.dumps(clues), puzzle_id)

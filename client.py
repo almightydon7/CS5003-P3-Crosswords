@@ -226,7 +226,6 @@ class CrosswordClient:
         )
         back_btn.pack(side="left")
         
-        # 使用Frame来包含所有谜题卡片，使用网格布局
         puzzles_container = tk.Frame(container)
         puzzles_container.pack(fill="both", expand=True, pady=10)
         
@@ -236,51 +235,45 @@ class CrosswordClient:
         if response and response['status'] == 'ok':
             puzzles = response['puzzles']
             
-            # 计算每行能放置的卡片数量
-            cards_per_row = 2  # 默认每行2个
+            cards_per_row = 2 
             
-            # 函数：重新布局谜题卡片
             def resize_grid(event=None):
                 nonlocal cards_per_row
-                # 获取窗口宽度并计算每行卡片数
+
                 window_width = container.winfo_width()
-                # 预计一个卡片宽度约为300像素
                 cards_per_row = max(1, window_width // 350)
                 
-                # 重新布局所有卡片
                 for idx, frame in enumerate(puzzle_frames):
                     row = idx // cards_per_row
                     col = idx % cards_per_row
                     frame.grid(row=row, column=col, padx=10, pady=10, sticky="ew")
-                
-                # 配置列权重，使列宽度相等
+
                 for i in range(cards_per_row):
                     puzzles_container.grid_columnconfigure(i, weight=1)
-            
-            # 保存所有谜题框架的列表
+
             puzzle_frames = []
             
             for i, puzzle in enumerate(puzzles):
-                # 解析元组数据 (id, title, author)
+
                 puzzle_id = puzzle[0]
                 title = puzzle[1] or f"Puzzle {puzzle_id}"
                 author = puzzle[2] or 'Unknown'
                 
-                # 创建每个谜题的卡片
+
                 puzzle_frame = tk.Frame(puzzles_container, bd=1, relief=tk.SOLID, padx=10, pady=10)
                 puzzle_frames.append(puzzle_frame)
                 
-                # 初始布局 - 稍后会通过resize_grid函数重新布局
+
                 row = i // cards_per_row
                 col = i % cards_per_row
                 puzzle_frame.grid(row=row, column=col, padx=10, pady=10, sticky="ew")
                 
-                # 谜题信息
+
                 info_frame = tk.Frame(puzzle_frame)
                 info_frame.pack(fill="x", side="top")
                 
-                # 添加谜题信息到界面
-                description = "No description available."  # 默认描述
+
+                description = "No description available." 
                 
                 title_label = tk.Label(info_frame, text=title, font=("Arial", 14, "bold"))
                 title_label.pack(anchor="w")
@@ -321,14 +314,14 @@ class CrosswordClient:
                 )
                 play_button.pack(side="left")
             
-            # 配置列权重，使列宽度相等
+
             for i in range(cards_per_row):
                 puzzles_container.grid_columnconfigure(i, weight=1)
             
-            # 绑定窗口大小变化事件
+
             container.bind("<Configure>", resize_grid)
             
-            # 初始布局
+
             self.root.update_idletasks()
             resize_grid()
         else:
@@ -627,7 +620,7 @@ class CrosswordClient:
         
     def update_timer(self):
         if hasattr(self, 'start_time') and hasattr(self, 'timer_label'):
-            # 确保标签仍然存在
+
             try:
                 if getattr(self, 'challenge_mode', False):
                     # Challenge mode - countdown timer
@@ -830,7 +823,6 @@ class CrosswordClient:
         right_container = tk.Frame(content_frame, bg='white')
         right_container.pack(side="right", fill="both", expand=True, padx=(20, 0))
 
-        # 创建 Canvas + Scrollbar 包裹 right_frame
         right_canvas = tk.Canvas(right_container, bg='white', highlightthickness=0)
         scrollbar = tk.Scrollbar(right_container, orient="vertical", command=right_canvas.yview)
         scrollable_frame = tk.Frame(right_canvas, bg='white')
@@ -843,11 +835,9 @@ class CrosswordClient:
         right_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         right_canvas.configure(yscrollcommand=scrollbar.set)
 
-        # 真正显示的 clue 区域
         right_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # 用 scrollable_frame 替代原 right_frame，后面所有 clue 相关内容都添加到 scrollable_frame 里
         right_frame = scrollable_frame
 
         # Clues frame
@@ -978,7 +968,6 @@ class CrosswordClient:
                         clue_text = puzzle.clues[entry['clue_index']]
                         across_entries[-1].insert(0, clue_text)
 
-                        # 记录格子范围
                         positions = [(row, col + i) for i in range(entry['len']) if col + i < width]
                         across_clue_map.append((across_entries[-1], positions))
 
