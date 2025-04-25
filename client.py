@@ -23,6 +23,32 @@ class CrosswordClient:
             messagebox.showerror("Error", f"Cannot connect to server: {str(e)}")
             self.root.destroy()
     
+    def clear_window(self):
+        """Clear all widgets from the window"""
+        for widget in self.root.winfo_children():
+            widget.destroy()
+    
+    def send_request(self, request_data):
+        """Send a request to the server and get the response
+        
+        Args:
+            request_data (dict): The request data to send
+            
+        Returns:
+            dict: The response from the server
+        """
+        try:
+            # Send the request
+            self.sock.send(json.dumps(request_data).encode())
+            
+            # Get the response
+            return self.receive_response()
+        except Exception as e:
+            print(f"Error in send_request: {str(e)}")
+            print("Full error:")
+            traceback.print_exc()
+            return {"status": "error", "message": f"Network error: {str(e)}"}
+    
     def show_login_screen(self):
         """Display login screen"""
         # Clear existing widgets
@@ -53,7 +79,9 @@ class CrosswordClient:
             command=self.login,
             font=("Helvetica", 12),
             bg='#2196F3',
-            fg='black'
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=20)
         
         # Hint
@@ -108,8 +136,10 @@ class CrosswordClient:
             text="View Puzzle List",
             command=self.show_puzzle_list,
             font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
         
         tk.Button(
@@ -117,8 +147,10 @@ class CrosswordClient:
             text="Add New Puzzle",
             command=self.show_add_puzzle,
             font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
         
         tk.Button(
@@ -126,8 +158,10 @@ class CrosswordClient:
             text="View Statistics",
             command=self.show_statistics,
             font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
 
 
@@ -137,73 +171,177 @@ class CrosswordClient:
             text="Social Menu",
             command=self.show_social_menu,
             font=("Helvetica", 12),
-            bg='#4CAF50',
-            fg='black'
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
 
     
     def show_puzzle_list(self):
-        """Display puzzle list"""
-        try:
-            self.sock.send(json.dumps({'action': 'get_puzzles'}).encode())
+        """Show puzzle list screen"""
+        self.clear_window()
+        self.current_screen = 'puzzle_list'
+        
+        # Setup UI
+        container = tk.Frame(self.root)
+        container.pack(fill="both", expand=True, padx=20, pady=20)
 
-            response = self.receive_response()
+        header_frame = tk.Frame(container)
+        header_frame.pack(fill="x", pady=(0, 10))
+        
+        title_label = tk.Label(
+            header_frame, 
+            text="Crossword Puzzles", 
+            font=("Arial", 18, "bold")
+        )
+        title_label.pack(side="left")
+        
+        btn_frame = tk.Frame(header_frame)
+        btn_frame.pack(side="right")
+        
+        # Create a puzzle button
+        create_btn = tk.Button(
+            btn_frame,
+            text="Create Puzzle",
+            font=("Arial", 12),
+            command=self.show_add_puzzle,
+            bg="#FFC107",
+            fg="black",
+            padx=10,
+            pady=5
+        )
+        create_btn.pack(side="left", padx=(0, 10))
+        
+        # Add back to menu button
+        back_btn = tk.Button(
+            btn_frame,
+            text="Back to Menu",
+            font=("Arial", 12),
+            command=self.show_main_menu,
+            bg="#FFC107",
+            fg="black",
+            padx=10,
+            pady=5
+        )
+        back_btn.pack(side="left")
+        
+        # 使用Frame来包含所有谜题卡片，使用网格布局
+        puzzles_container = tk.Frame(container)
+        puzzles_container.pack(fill="both", expand=True, pady=10)
+        
+        # Get puzzles from server
+        response = self.send_request({'action': 'get_puzzles'})
+        
+        if response and response['status'] == 'ok':
+            puzzles = response['puzzles']
             
-            if response['status'] != 'ok':
-                messagebox.showerror("Error", response.get('message', 'Failed to get puzzle list'))
-                return
+            # 计算每行能放置的卡片数量
+            cards_per_row = 2  # 默认每行2个
             
-            # Clear existing widgets
-            for widget in self.root.winfo_children():
-                widget.destroy()
-            
-            # Create main frame
-            main_frame = tk.Frame(self.root, bg='white')
-            main_frame.pack(expand=True, fill="both", padx=40, pady=40)
-            
-            # Title
-            tk.Label(
-                main_frame,
-                text="Available Puzzles",
-                font=("Helvetica", 20),
-                bg='white',
-                fg='black'
-            ).pack(pady=20)
-            
-            # Puzzle list
-            for puzzle_id, title, author in response['puzzles']:
-                puzzle_frame = tk.Frame(main_frame, bg='white')
-                puzzle_frame.pack(fill="x", pady=5)
+            # 函数：重新布局谜题卡片
+            def resize_grid(event=None):
+                nonlocal cards_per_row
+                # 获取窗口宽度并计算每行卡片数
+                window_width = container.winfo_width()
+                # 预计一个卡片宽度约为300像素
+                cards_per_row = max(1, window_width // 350)
                 
-                tk.Label(
-                    puzzle_frame,
-                    text=f"{title} (by: {author})",
-                    font=("Helvetica", 12),
-                    bg='white',
-                    fg='black'
-                ).pack(side="left", padx=5)
+                # 重新布局所有卡片
+                for idx, frame in enumerate(puzzle_frames):
+                    row = idx // cards_per_row
+                    col = idx % cards_per_row
+                    frame.grid(row=row, column=col, padx=10, pady=10, sticky="ew")
                 
-                tk.Button(
-                    puzzle_frame,
-                    text="Solve",
-                    command=lambda pid=puzzle_id: self.show_puzzle(pid),
-                    font=("Helvetica", 12),
-                    bg='#2196F3',
-                    fg='black'
-                ).pack(side="right", padx=5)
+                # 配置列权重，使列宽度相等
+                for i in range(cards_per_row):
+                    puzzles_container.grid_columnconfigure(i, weight=1)
             
-            # Return button
-            tk.Button(
-                main_frame,
-                text="Back to Menu",
-                command=self.show_main_menu,
-                font=("Helvetica", 12),
-                bg='#2196F3',
-                fg='black'
-            ).pack(pady=20)
+            # 保存所有谜题框架的列表
+            puzzle_frames = []
             
-        except Exception as e:
-            messagebox.showerror("Error", f"Network error: {str(e)}")
+            for i, puzzle in enumerate(puzzles):
+                # 解析元组数据 (id, title, author)
+                puzzle_id = puzzle[0]
+                title = puzzle[1] or f"Puzzle {puzzle_id}"
+                author = puzzle[2] or 'Unknown'
+                
+                # 创建每个谜题的卡片
+                puzzle_frame = tk.Frame(puzzles_container, bd=1, relief=tk.SOLID, padx=10, pady=10)
+                puzzle_frames.append(puzzle_frame)
+                
+                # 初始布局 - 稍后会通过resize_grid函数重新布局
+                row = i // cards_per_row
+                col = i % cards_per_row
+                puzzle_frame.grid(row=row, column=col, padx=10, pady=10, sticky="ew")
+                
+                # 谜题信息
+                info_frame = tk.Frame(puzzle_frame)
+                info_frame.pack(fill="x", side="top")
+                
+                # 添加谜题信息到界面
+                description = "No description available."  # 默认描述
+                
+                title_label = tk.Label(info_frame, text=title, font=("Arial", 14, "bold"))
+                title_label.pack(anchor="w")
+                
+                author_label = tk.Label(info_frame, text=f"By: {author}", font=("Arial", 10))
+                author_label.pack(anchor="w")
+                
+                desc_label = tk.Label(info_frame, text=description, font=("Arial", 10), wraplength=300, justify="left")
+                desc_label.pack(anchor="w", pady=(5, 0))
+                
+                # Button frame
+                button_frame = tk.Frame(puzzle_frame)
+                button_frame.pack(fill="x", side="bottom", pady=(10, 0))
+                
+                # Challenge mode button
+                challenge_button = tk.Button(
+                    button_frame,
+                    text="Challenge Mode",
+                    font=("Arial", 12, "bold"),
+                    bg="#FFC107",
+                    fg="black",
+                    padx=10,
+                    pady=5,
+                    command=lambda pid=puzzle_id: self.start_challenge_mode(pid)
+                )
+                challenge_button.pack(side="left", padx=(0, 10))
+                
+                # Play button
+                play_button = tk.Button(
+                    button_frame,
+                    text="Nomal Mode",
+                    font=("Arial", 12),
+                    bg="#FFC107",
+                    fg="black",
+                    padx=10,
+                    pady=5,
+                    command=lambda pid=puzzle_id: self.show_puzzle(pid)
+                )
+                play_button.pack(side="left")
+            
+            # 配置列权重，使列宽度相等
+            for i in range(cards_per_row):
+                puzzles_container.grid_columnconfigure(i, weight=1)
+            
+            # 绑定窗口大小变化事件
+            container.bind("<Configure>", resize_grid)
+            
+            # 初始布局
+            self.root.update_idletasks()
+            resize_grid()
+        else:
+            error_msg = "No puzzles found or server error"
+            if response:
+                error_msg = response.get('message', error_msg)
+            error_label = tk.Label(
+                container, 
+                text=error_msg,
+                font=("Arial", 12),
+                fg="red"
+            )
+            error_label.pack(pady=50)
     
     def receive_response(self):
         """Receive and parse response from server"""
@@ -234,10 +372,13 @@ class CrosswordClient:
             traceback.print_exc()
             raise
 
-    def show_puzzle(self, puzzle_id):
+    def show_puzzle(self, puzzle_id, challenge_mode=False):
         """Display puzzle"""
         
         self.start_time = time.time()
+        self.challenge_mode = challenge_mode
+        self.challenge_time = 50  # 50 seconds for challenge mode
+        self.puzzle_id = puzzle_id  # Store puzzle ID for later use
 
         try:
             print(f"\n=== Debug: Requesting puzzle {puzzle_id} ===")
@@ -267,6 +408,16 @@ class CrosswordClient:
             # Create main frame with white background
             main_frame = tk.Frame(self.root, bg='white')
             main_frame.pack(expand=True, fill="both", padx=40, pady=40)
+            
+            # Create mode label
+            mode_label = tk.Label(
+                main_frame,
+                text="CHALLENGE MODE - 50 SECONDS" if challenge_mode else "NORMAL MODE",
+                font=("Helvetica", 14, "bold"),
+                bg='white',
+                fg='#FF5722' if challenge_mode else 'black'
+            )
+            mode_label.pack(pady=(0, 10))
             
             # Create grid and clues frame
             game_frame = tk.Frame(main_frame, bg='white')
@@ -439,18 +590,22 @@ class CrosswordClient:
                 button_frame,
                 text="Submit Answer",
                 command=lambda: self.submit_solution(puzzle_id),
-                font=("Helvetica", 12),
-                bg='#2196F3',
-                fg='black'
+                font=("Arial", 12),
+                bg='#FFC107',
+                fg='black',
+                padx=10,
+                pady=5
             ).pack(side="left", padx=5)
             
             tk.Button(
                 button_frame,
                 text="Back to List",
                 command=self.show_puzzle_list,
-                font=("Helvetica", 12),
-                bg='#2196F3',
-                fg='black'
+                font=("Arial", 12),
+                bg='#FFC107',
+                fg='black',
+                padx=10,
+                pady=5
             ).pack(side="left", padx=5)
             
             # Create timer label
@@ -466,55 +621,102 @@ class CrosswordClient:
             traceback.print_exc()
             messagebox.showerror("Error", f"Network error: {str(e)}")
 
+    def start_challenge_mode(self, puzzle_id):
+        """Start a puzzle in challenge mode"""
+        self.show_puzzle(puzzle_id, challenge_mode=True)
+        
     def update_timer(self):
-        if hasattr(self, 'start_time'):
-            elapsed = int(time.time() - self.start_time)
-            self.timer_label.config(text=f"Time: {elapsed}s")
-            self.root.after(1000, self.update_timer)
+        if hasattr(self, 'start_time') and hasattr(self, 'timer_label'):
+            # 确保标签仍然存在
+            try:
+                if getattr(self, 'challenge_mode', False):
+                    # Challenge mode - countdown timer
+                    remaining = max(0, self.challenge_time - int(time.time() - self.start_time))
+                    self.timer_label.config(text=f"Time left: {remaining}s", fg='red' if remaining < 10 else 'black')
+                    
+                    # Check if time's up
+                    if remaining == 0:
+                        self.timer_label.config(text="Time's up!", fg='red')
+                        messagebox.showinfo("Challenge Failed", "Time's up! Challenge failed.")
+                        self.show_puzzle_list()
+                        return
+                else:
+                    # Normal mode - counting up
+                    elapsed = int(time.time() - self.start_time)
+                    self.timer_label.config(text=f"Time: {elapsed}s")
+                
+                self.root.after(1000, self.update_timer)
+            except (AttributeError, tk.TclError):
+                #  if the label does not exist or has been destroyed, stop the timer
+                print("Timer stopped - widget no longer exists")
+                pass
     
     def submit_solution(self, puzzle_id):
-        """Submit answer"""
-        elapsed_time = int(time.time() - self.start_time)
-
+        """Submit puzzle solution to the server"""
         try:
-            # Collect answer
+            # Extract user solution from grid
             solution = []
-            for row in self.cells:
+            for i, row in enumerate(self.cells):
                 solution_row = []
-                for cell in row:
-
-                    value = cell.get().strip().upper() if cell['state'] != 'disabled' else ''
+                for j, cell in enumerate(row):
+                    if cell['state'] != 'disabled':
+                        value = cell.get().strip().upper()
+                        if value == '':
+                            value = ' '  # Empty cells as spaces
+                    else:
+                        value = '.'  # Black cells as dots
                     solution_row.append(value)
                 solution.append(solution_row)
             
-            # Convert solution to JSON string
-            solution_json = json.dumps(solution)
+            # Calculate elapsed time
+            final_time = int(time.time() - self.start_time)
             
-
+            # Send solution to server
             self.sock.send(json.dumps({
                 'action': 'submit_solution',
                 'username': self.current_user,
                 'puzzle_id': puzzle_id,
-
-                'solution': solution_json,
-                'time_taken': elapsed_time
+                'solution': json.dumps(solution),
+                'time_taken': final_time,
+                'challenge_mode': getattr(self, 'challenge_mode', False)
             }).encode())
             
             response = self.receive_response()
-
             
-            if response['status'] == 'ok':
-                messagebox.showinfo("Success", "Correct answer!")
+            if response.get('status') == 'ok':
+                challenge_success = ""
+                if getattr(self, 'challenge_mode', False):
+                    challenge_success = "\n\n🏆 CHALLENGE MODE COMPLETED! 🏆"
+                
+                # If there's rank information in the response, show it
+                if 'rank' in response and 'total_solvers' in response:
+                    message = (f"Congratulations! Correct solution!{challenge_success}\n\n"
+                               f"Your time: {int(final_time//60)}:{int(final_time%60):02d}\n"
+                               f"Your rank: {response['rank']} of {response['total_solvers']}")
+                    
+                    # Add medal emoji based on rank
+                    if response['rank'] == 1:
+                        message += "\n\n🥇 You have the fastest time!"
+                    elif response['rank'] == 2:
+                        message += "\n\n🥈 You have the second fastest time!"
+                    elif response['rank'] == 3:
+                        message += "\n\n🥉 You have the third fastest time!"
+                    
+                    messagebox.showinfo("Success", message)
+                else:
+                    messagebox.showinfo("Success", f"Correct solution!{challenge_success}")
+                    
+                # Return to the puzzle list
                 self.show_puzzle_list()
             else:
-                messagebox.showerror("Error", response.get('message', 'Incorrect answer, please try again'))
+                messagebox.showerror("Error", response.get('message', 'Unknown error'))
+                # Continue the timer
+                self.start_time = time.time() - final_time  # Adjust start time to keep elapsed time constant
                 
         except Exception as e:
-
             print(f"Error in submit_solution: {str(e)}")
             print("Full error:")
             traceback.print_exc()
-
             messagebox.showerror("Error", f"Network error: {str(e)}")
     
     def show_add_puzzle(self):
@@ -546,9 +748,11 @@ class CrosswordClient:
             top_frame,
             text="Back to Menu",
             command=self.show_main_menu,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(side="right", padx=20)
         
 
@@ -693,10 +897,10 @@ class CrosswordClient:
 
         # Add clue buttons
         tk.Button(across_frame, text="Add Across Clue", command=add_across_clue,
-                 font=("Helvetica", 10), bg='#2196F3', fg='black').pack(pady=5)
+                 font=("Arial", 10), bg='#FFC107', fg='black', padx=10, pady=5).pack(pady=5)
         
         tk.Button(down_frame, text="Add Down Clue", command=add_down_clue,
-                 font=("Helvetica", 10), bg='#2196F3', fg='black').pack(pady=5)
+                 font=("Arial", 10), bg='#FFC107', fg='black', padx=10, pady=5).pack(pady=5)
 
         # Create initial grid
         create_grid(3, 3)
@@ -826,10 +1030,11 @@ class CrosswordClient:
             top_frame,
             text="Import PUZ File",
             command=import_puz_file,  # Now import_puz_file is accessible
-            font=("Helvetica", 12),
-            bg='#4CAF50',
+            font=("Arial", 12),
+            bg='#FFC107',
             fg='black',
-            padx=10
+            padx=10,
+            pady=5
         ).pack(side="left", padx=20)
 
         def validate_and_submit():
@@ -939,10 +1144,11 @@ class CrosswordClient:
             submit_frame,
             text="Submit",
             command=validate_and_submit,
-            font=("Helvetica", 12),
-            bg='#4CAF50',
+            font=("Arial", 12),
+            bg='#FFC107',
             fg='black',
-            padx=20
+            padx=10,
+            pady=5
         ).pack(side="left", padx=5)
 
     
@@ -986,9 +1192,11 @@ class CrosswordClient:
                 top_frame,
                 text="Back to Menu",
                 command=self.show_main_menu,
-                font=("Helvetica", 12),
-                bg='#2196F3',
-                fg='black'
+                font=("Arial", 12),
+                bg='#FFC107',
+                fg='black',
+                padx=10,
+                pady=5
             ).pack(side="right", padx=20)
             
             # Create scrollable area
@@ -1073,7 +1281,6 @@ class CrosswordClient:
             
             tk.Label(
                 headers_frame,
-
                 text="Fastest Time (s)",
                 font=("Helvetica", 12, "bold"),
                 width=15,
@@ -1092,7 +1299,6 @@ class CrosswordClient:
 
             tk.Label(
                 headers_frame,
-
                 text="Puzzles Created",
                 font=("Helvetica", 12, "bold"),
                 width=15,
@@ -1125,7 +1331,6 @@ class CrosswordClient:
                 
                 tk.Label(
                     user_frame,
-
                     text=str(user_stats.get('fastest_time', 'N/A')),
                     font=("Helvetica", 12),
                     width=15,
@@ -1144,7 +1349,6 @@ class CrosswordClient:
 
                 tk.Label(
                     user_frame,
-
                     text=str(user_stats['puzzles_created']),
                     font=("Helvetica", 12),
                     width=15,
@@ -1152,8 +1356,127 @@ class CrosswordClient:
                     fg='black'
                 ).pack(side="left")
             
+            # Add button to view historical rankings
+            view_button = tk.Button(self.root, text="View Historical Rankings", 
+                                   command=self.show_historical_rankings)
+            view_button.pack(pady=10)
+            
         except Exception as e:
             messagebox.showerror("Error", f"Network error: {str(e)}")
+
+    def show_historical_rankings(self):
+        """Show historical rankings for the current user"""
+        # Clear main window
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        
+        # Create header
+        header_frame = tk.Frame(self.root)
+        header_frame.pack(pady=10)
+        
+        tk.Label(header_frame, text="Historical Rankings", font=("Arial", 18, "bold")).pack()
+        
+        # Create back button
+        back_button = tk.Button(header_frame, text="Back to Statistics", 
+                                command=self.show_statistics)
+        back_button.pack(pady=5)
+        
+        # Create main content frame with scrollbar
+        main_frame = tk.Frame(self.root)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Add a canvas for scrolling
+        canvas = tk.Canvas(main_frame)
+        scrollbar = tk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Request historical rankings from server
+        request = {
+            'action': 'get_historical_rankings',
+            'username': self.username if hasattr(self, 'username') else self.current_user
+        }
+        
+        response = self.send_request(request)
+        
+        if response.get('status') == 'ok' and 'records' in response:
+            records = response['records']
+            
+            # Create header row
+            header_row = tk.Frame(scrollable_frame)
+            header_row.pack(fill="x", pady=5)
+            
+            headers = ["Puzzle", "Time", "Date", "Rank", "Total Solvers"]
+            widths = [200, 100, 100, 80, 100]
+            
+            for i, header in enumerate(headers):
+                tk.Label(header_row, text=header, width=widths[i]//10, 
+                         font=("Arial", 10, "bold")).pack(side="left", padx=5)
+            
+            # Add separator
+            separator = ttk.Separator(scrollable_frame, orient='horizontal')
+            separator.pack(fill='x', pady=5)
+            
+            if not records:
+                tk.Label(scrollable_frame, text="No puzzles solved yet!", 
+                         font=("Arial", 12)).pack(pady=20)
+            else:
+                # Add record rows
+                for record in records:
+                    row = tk.Frame(scrollable_frame)
+                    row.pack(fill="x", pady=2)
+                    
+                    # Format time as minutes:seconds
+                    minutes = int(record['time_taken']) // 60
+                    seconds = int(record['time_taken']) % 60
+                    time_str = f"{minutes}:{seconds:02d}"
+                    
+                    # Format date
+                    date_str = record['solved_at'].split(' ')[0]
+                    
+                    # Format rank
+                    rank_str = f"{record['rank']} of {record['total_solvers']}"
+                    
+                    # Set color based on rank
+                    rank_color = "#000000"  # Default black
+                    if record['rank'] == 1:
+                        rank_color = "#FFD700"  # Gold
+                    elif record['rank'] == 2:
+                        rank_color = "#C0C0C0"  # Silver
+                    elif record['rank'] == 3:
+                        rank_color = "#CD7F32"  # Bronze
+                    
+                    # Add each cell
+                    tk.Label(row, text=record['puzzle_title'], width=widths[0]//10,
+                             anchor="w").pack(side="left", padx=5)
+                    tk.Label(row, text=time_str, width=widths[1]//10).pack(side="left", padx=5)
+                    tk.Label(row, text=date_str, width=widths[2]//10).pack(side="left", padx=5)
+                    tk.Label(row, text=record['rank'], width=widths[3]//10,
+                             fg=rank_color).pack(side="left", padx=5)
+                    tk.Label(row, text=record['total_solvers'], width=widths[4]//10).pack(side="left", padx=5)
+                    
+                    # Add light separator
+                    separator = ttk.Separator(scrollable_frame, orient='horizontal')
+                    separator.pack(fill='x', pady=2)
+        else:
+            error_msg = response.get('message', 'Unknown error')
+            tk.Label(scrollable_frame, text=f"Error: {error_msg}", 
+                     font=("Arial", 12), fg="red").pack(pady=20)
+        
+        # Add button to view historical rankings
+        view_button = tk.Button(self.root, text="Refresh Rankings", 
+                               command=self.show_historical_rankings)
+        view_button.pack(pady=10)
 
     def show_social_menu(self):
         """Display social menu for adding friends, viewing friends, sending messages"""
@@ -1173,9 +1496,11 @@ class CrosswordClient:
             self.root,
             text="Add Friend",
             command=self.show_add_friend,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
 
         # View Friend Requests button
@@ -1183,9 +1508,11 @@ class CrosswordClient:
             self.root,
             text="View Friend Requests",
             command=self.show_friend_requests,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
 
         # View Friends button
@@ -1193,9 +1520,11 @@ class CrosswordClient:
             self.root,
             text="View Friends",
             command=self.show_friends_list,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
 
         # Send Message button
@@ -1203,9 +1532,11 @@ class CrosswordClient:
             self.root,
             text="Send Message",
             command=self.show_send_message,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
 
         # View Messages button
@@ -1213,9 +1544,11 @@ class CrosswordClient:
             self.root,
             text="View Messages",
             command=self.show_view_messages,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
 
         # Back to Menu button
@@ -1223,10 +1556,12 @@ class CrosswordClient:
             self.root,
             text="Back to Menu",
             command=self.show_main_menu,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
-        ).pack(pady=20)
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
+        ).pack(side="right", padx=20)
 
     def show_add_friend(self):
         """Display add friend interface"""
@@ -1238,7 +1573,7 @@ class CrosswordClient:
         tk.Label(
             self.root,
             text="Add Friend",
-            font=("Helvetica", 24)
+            font=("Arial", 24)
         ).pack(pady=40)
 
         # Friend username input
@@ -1251,9 +1586,11 @@ class CrosswordClient:
             self.root,
             text="Send Friend Request",
             command=self.add_friend,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=20)
 
         # Back to Menu button
@@ -1261,9 +1598,11 @@ class CrosswordClient:
             self.root,
             text="Back to Menu",
             command=self.show_main_menu,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
 
     def add_friend(self):
@@ -1331,9 +1670,11 @@ class CrosswordClient:
                 self.root,
                 text="Back to Menu",
                 command=self.show_main_menu,
-                font=("Helvetica", 12),
-                bg='#2196F3',
-                fg='black'
+                font=("Arial", 12),
+                bg='#FFC107',
+                fg='black',
+                padx=10,
+                pady=5
             ).pack(pady=20)
 
         except Exception as e:
@@ -1367,9 +1708,11 @@ class CrosswordClient:
             self.root,
             text="Send Message",
             command=self.send_message,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=20)
 
         # Back to Menu button
@@ -1377,9 +1720,11 @@ class CrosswordClient:
             self.root,
             text="Back to Menu",
             command=self.show_main_menu,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=10)
 
     def send_message(self):
@@ -1450,9 +1795,11 @@ class CrosswordClient:
                         self.root,
                         text=f"Accept {sender_id}",
                         command=lambda sender_id=sender_id: self.accept_friend_request(sender_id),
-                        font=("Helvetica", 12),
-                        bg='#4CAF50',
-                        fg='black'
+                        font=("Arial", 12),
+                        bg='#FFC107',
+                        fg='black',
+                        padx=10,
+                        pady=5
                     ).pack(pady=5)
 
                     # Reject button
@@ -1460,9 +1807,11 @@ class CrosswordClient:
                         self.root,
                         text=f"Reject {sender_id}",
                         command=lambda sender_id=sender_id: self.reject_friend_request(sender_id),
-                        font=("Helvetica", 12),
-                        bg='#F44336',
-                        fg='black'
+                        font=("Arial", 12),
+                        bg='#FFC107',
+                        fg='black',
+                        padx=10,
+                        pady=5
                     ).pack(pady=5)
             else:
                 # Show message when there are no pending requests
@@ -1477,9 +1826,11 @@ class CrosswordClient:
                 self.root,
                 text="Back to Menu",
                 command=self.show_main_menu,
-                font=("Helvetica", 12),
-                bg='#2196F3',
-                fg='black'
+                font=("Arial", 12),
+                bg='#FFC107',
+                fg='black',
+                padx=10,
+                pady=5
             ).pack(pady=20)
 
         except Exception as e:
@@ -1646,9 +1997,11 @@ class CrosswordClient:
             self.root,
             text="Back to Social Menu",
             command=self.show_social_menu,
-            font=("Helvetica", 12),
-            bg='#2196F3',
-            fg='black'
+            font=("Arial", 12),
+            bg='#FFC107',
+            fg='black',
+            padx=10,
+            pady=5
         ).pack(pady=20)
 
 if __name__ == "__main__":

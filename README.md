@@ -53,25 +53,35 @@ This application allows users to:
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 3. Install dependencies:
-   `pip install puzpy`
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ---
 
 ## Getting Started
+
 ### Starting the Server
 
 1. Initialize the database (first time only):
 
-   `python -m database.init_db`
+   ```bash
+   python -m database.init_db
+   ```
 
 2. Start the server:
-   `python server.py`
+
+   ```bash
+   python server.py
+   ```
 
 ### Starting the Client
 
 1. In a new terminal window (or tab), launch the client application:
 
-   `python client.py`
+   ```bash
+   python client.py
+   ```
 
 2. Log in with your username and password. New accounts are automatically created on first login.
 
