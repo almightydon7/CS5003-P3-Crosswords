@@ -113,6 +113,20 @@ CREATE TABLE IF NOT EXISTS puzzle_ratings (
 )
 ''')
 
+# Create historical_rankings table to track user rankings over time
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS historical_rankings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    puzzle_id INTEGER,
+    score REAL NOT NULL,
+    rank INTEGER NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (puzzle_id) REFERENCES crosswords(id)
+)
+''')
+
 # Add preset crosswords
 sample_crosswords = [
     {
