@@ -168,6 +168,11 @@ class CrosswordServer:
                 return self.handle_get_friends(request)
             elif action == 'reject_friend':
                 return self.handle_reject_friend(request)
+<<<<<<< HEAD
+            elif action == 'get_historical_rankings':
+                return self.handle_get_historical_rankings(request)
+=======
+>>>>>>> main
             else:
                 print(f"Debug: Unknown action type received: {action}")
                 return {'status': 'error', 'message': 'Unknown action type'}
@@ -507,13 +512,62 @@ class CrosswordServer:
                 )
                 
                 if time_taken is not None:
+<<<<<<< HEAD
+                    # Calculate the rank among all solvers of this puzzle
+                    cursor.execute(
+                        """
+                        SELECT COUNT(*) + 1 as rank FROM puzzle_records 
+                        WHERE puzzle_id = ? AND time_taken < ?
+                        """,
+                        (puzzle_id, time_taken)
+                    )
+                    rank_result = cursor.fetchone()
+                    rank = rank_result[0] if rank_result else 1
+                    
+                    # Get total number of solvers for this puzzle
+                    cursor.execute(
+                        "SELECT COUNT(*) as total FROM puzzle_records WHERE puzzle_id = ?",
+                        (puzzle_id,)
+                    )
+                    total_result = cursor.fetchone()
+                    total_solvers = total_result[0] if total_result else 0
+                    
+                    # Insert into puzzle_records
+=======
+>>>>>>> main
                     cursor.execute(
                         "INSERT INTO puzzle_records (username, puzzle_id, time_taken) VALUES (?, ?, ?)",
                         (username, puzzle_id, time_taken)
                     )
+<<<<<<< HEAD
+                    
+                    # Insert into historical_rankings
+                    cursor.execute(
+                        """
+                        INSERT INTO historical_rankings 
+                        (user_id, puzzle_id, score, rank, timestamp)
+                        VALUES (?, ?, ?, ?, datetime('now'))
+                        """,
+                        (username, puzzle_id, time_taken, rank)
+                    )
+
+                conn.commit()
+                
+                # Return rank information with the response
+                if time_taken is not None:
+                    return {
+                        'status': 'ok', 
+                        'message': 'Correct answer!',
+                        'rank': rank,
+                        'total_solvers': total_solvers + 1  # Add 1 to include this solution
+                    }
+                else:
+                    return {'status': 'ok', 'message': 'Correct answer!'}
+=======
 
                 conn.commit()
                 return {'status': 'ok', 'message': 'Correct answer!'}
+>>>>>>> main
             else:
                 return {'status': 'error', 'message': 'Incorrect answer, please try again'}
                 
@@ -952,6 +1006,76 @@ class CrosswordServer:
             print(f"Debug: Error in handle_get_messages: {str(e)}")
             return {'status': 'error', 'message': str(e)}
 
+<<<<<<< HEAD
+    def handle_get_historical_rankings(self, request):
+        """Handle fetching historical rankings for a user"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            username = request.get('username')
+            
+            if not username:
+                return {'status': 'error', 'message': 'Username is required'}
+            
+            # Get user's historical puzzle records with ranking information
+            cursor.execute("""
+                WITH RankedRecords AS (
+                    SELECT 
+                        pr1.username,
+                        pr1.puzzle_id,
+                        p.title as puzzle_title,
+                        pr1.time_taken,
+                        pr1.solved_at,
+                        (SELECT COUNT(*) + 1 FROM puzzle_records pr2 
+                         WHERE pr2.puzzle_id = pr1.puzzle_id AND pr2.time_taken < pr1.time_taken) as rank,
+                        (SELECT COUNT(*) FROM puzzle_records pr3 
+                         WHERE pr3.puzzle_id = pr1.puzzle_id) as total_solvers
+                    FROM puzzle_records pr1
+                    JOIN puzzles p ON pr1.puzzle_id = p.id
+                    WHERE pr1.username = ?
+                )
+                SELECT * FROM RankedRecords
+                ORDER BY solved_at DESC
+            """, (username,))
+            
+            records = []
+            for row in cursor.fetchall():
+                records.append({
+                    'username': row[0],
+                    'puzzle_id': row[1],
+                    'puzzle_title': row[2],
+                    'time_taken': row[3],
+                    'solved_at': row[4],
+                    'rank': row[5],
+                    'total_solvers': row[6]
+                })
+            
+            # Also save these records in the historical_rankings table
+            for record in records:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO historical_rankings 
+                    (user_id, puzzle_id, score, rank, timestamp)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (username, record['puzzle_id'], record['time_taken'], 
+                      record['rank'], record['solved_at']))
+            
+            conn.commit()
+            
+            return {
+                'status': 'ok',
+                'records': records
+            }
+        except Exception as e:
+            print(f"Error in handle_get_historical_rankings: {str(e)}")
+            print("Full error:")
+            traceback.print_exc()
+            return {'status': 'error', 'message': str(e)}
+        finally:
+            conn.close()
+
+=======
+>>>>>>> main
 
 if __name__ == "__main__":
     server = CrosswordServer()
