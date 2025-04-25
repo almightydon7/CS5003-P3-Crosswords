@@ -16,7 +16,69 @@ class CrosswordServer:
         # Initialize database
         init_db()
         
+        # Sync crosswords to puzzles table
+        self._sync_crosswords_to_puzzles()
+        
         print(f"Server started, listening on port {self.port}...")
+    
+    def _sync_crosswords_to_puzzles(self):
+        """Sync data from crosswords table to puzzles table"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Get all crosswords
+            cursor.execute("""
+                SELECT id, name, creator_id, gridSize, clues, words 
+                FROM crosswords
+            """)
+            crosswords = cursor.fetchall()
+            
+            for cw in crosswords:
+                # Get creator username
+                cursor.execute("SELECT username FROM users WHERE id = ?", (cw['creator_id'],))
+                creator = cursor.fetchone()
+                author = creator['username'] if creator else 'system'
+                
+                # Check if puzzle already exists
+                cursor.execute("SELECT id FROM puzzles WHERE id = ?", (cw['id'],))
+                if cursor.fetchone() is None:
+                    # Convert data format to match puzzles table
+                    grid = json.loads(cw['gridSize']) if isinstance(cw['gridSize'], str) else cw['gridSize']
+                    clues = json.loads(cw['clues']) if isinstance(cw['clues'], str) else cw['clues']
+                    words = json.loads(cw['words']) if isinstance(cw['words'], str) else cw['words']
+                    
+                    # Create a simple grid for the puzzle format
+                    formatted_grid = []
+                    grid_width = int(grid[0])
+                    grid_height = int(grid[1])
+                    
+                    for i in range(grid_height):
+                        row = []
+                        for j in range(grid_width):
+                            row.append(" ")
+                        formatted_grid.append(row)
+                    
+                    # Insert into puzzles
+                    cursor.execute("""
+                        INSERT INTO puzzles (id, title, author, grid, answer, clues)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        cw['id'], 
+                        cw['name'], 
+                        author,
+                        json.dumps(formatted_grid),
+                        json.dumps(formatted_grid),  # Answer initially matches grid
+                        json.dumps(clues)
+                    ))
+            
+            conn.commit()
+            print(f"Synced {len(crosswords)} crosswords to puzzles table.")
+        except Exception as e:
+            print(f"Error syncing crosswords: {str(e)}")
+            traceback.print_exc()
+        finally:
+            conn.close()
     
     def start(self):
         """Start server and accept client connections"""
@@ -129,11 +191,11 @@ class CrosswordServer:
             elif action == 'submit_solution':
                 return self.handle_submit_solution(request)
             elif action == 'add_puzzle':
-                # 预处理 JSON 数据
+                # preprocess JSON data
                 if 'grid' in request:
                     try:
                         if isinstance(request['grid'], str):
-                            json.loads(request['grid'])  # 验证 JSON 字符串
+                            json.loads(request['grid'])  # verify JSON string
                     except json.JSONDecodeError:
                         request['grid'] = json.dumps(request['grid'])
                 
@@ -168,11 +230,8 @@ class CrosswordServer:
                 return self.handle_get_friends(request)
             elif action == 'reject_friend':
                 return self.handle_reject_friend(request)
-<<<<<<< HEAD
             elif action == 'get_historical_rankings':
                 return self.handle_get_historical_rankings(request)
-=======
->>>>>>> main
             else:
                 print(f"Debug: Unknown action type received: {action}")
                 return {'status': 'error', 'message': 'Unknown action type'}
@@ -227,7 +286,13 @@ class CrosswordServer:
             cursor.execute(
                 "SELECT id, title, author FROM puzzles ORDER BY id DESC"
             )
-            puzzles = cursor.fetchall()
+            raw_puzzles = cursor.fetchall()
+            
+            # Convert Row objects to list of tuples for JSON serialization
+            puzzles = []
+            for puzzle in raw_puzzles:
+                puzzles.append((puzzle['id'], puzzle['title'], puzzle['author']))
+                
             return {'status': 'ok', 'puzzles': puzzles}
         except Exception as e:
             return {'status': 'error', 'message': str(e)}
@@ -244,6 +309,7 @@ class CrosswordServer:
 
             print(f"\n=== Debug: Getting puzzle details for ID {puzzle_id} ===")
             
+            # First check data in puzzles table
             cursor.execute(
                 "SELECT grid, clues, author FROM puzzles WHERE id = ?",
                 (puzzle_id,)
@@ -279,6 +345,50 @@ class CrosswordServer:
                         else:
                             clues = raw_clues
                         
+                        # If clues is empty, try to get from crosswords table
+                        if (not isinstance(clues, dict)) or (not clues.get('across') and not clues.get('down')):
+                            print("Clues data empty or invalid, attempting to get from crosswords table")
+                            cursor.execute(
+                                "SELECT clues FROM crosswords WHERE id = ?",
+                                (puzzle_id,)
+                            )
+                            crossword_result = cursor.fetchone()
+                            if crossword_result:
+                                raw_crossword_clues = crossword_result[0]
+                                if isinstance(raw_crossword_clues, str):
+                                    crossword_clues = json.loads(raw_crossword_clues)
+                                else:
+                                    crossword_clues = raw_crossword_clues
+                                
+                                # Switch to client format
+                                formatted_clues = {"across": [], "down": []}
+                                for clue in crossword_clues:
+                                    if clue.get('direction') == 'across':
+                                        formatted_clues['across'].append({
+                                            'number': clue.get('id', 1),
+                                            'text': clue.get('text', 'No clue text'),
+                                            'row': clue.get('position', [0, 0])[0],
+                                            'col': clue.get('position', [0, 0])[1],
+                                            'len': len(clue.get('answer', '')) if 'answer' in clue else 5
+                                        })
+                                    elif clue.get('direction') == 'down':
+                                        formatted_clues['down'].append({
+                                            'number': clue.get('id', 1),
+                                            'text': clue.get('text', 'No clue text'),
+                                            'row': clue.get('position', [0, 0])[0],
+                                            'col': clue.get('position', [0, 0])[1],
+                                            'len': len(clue.get('answer', '')) if 'answer' in clue else 5
+                                        })
+                                
+                                clues = formatted_clues
+                                
+                                # 更新puzzles表中的clues
+                                cursor.execute(
+                                    "UPDATE puzzles SET clues = ? WHERE id = ?",
+                                    (json.dumps(clues), puzzle_id)
+                                )
+                                conn.commit()
+                        
                         # Ensure clues has the correct structure
                         if not isinstance(clues, dict):
                             clues = {"across": [], "down": []}
@@ -292,6 +402,54 @@ class CrosswordServer:
                     except json.JSONDecodeError as e:
                         print(f"Error parsing clues: {str(e)}")
                         return {'status': 'error', 'message': f'Invalid clues format: {str(e)}'}
+
+                    # Add default clues for sample puzzles if empty
+                    if len(clues["across"]) == 0 and len(clues["down"]) == 0:
+                        # Computer Science Basics
+                        if puzzle_id == 1:
+                            clues = {
+                                "across": [
+                                    {"number": 1, "text": "Foundation of computer science and programming", "row": 0, "col": 0, "len": 5},
+                                    {"number": 2, "text": "Memory used to speed up data access", "row": 2, "col": 0, "len": 5},
+                                    {"number": 3, "text": "Find and fix errors in code", "row": 4, "col": 0, "len": 5}
+                                ],
+                                "down": [
+                                    {"number": 1, "text": "A data structure that stores elements of the same type", "row": 0, "col": 0, "len": 5},
+                                    {"number": 2, "text": "A blueprint for creating objects in OOP", "row": 0, "col": 2, "len": 5}
+                                ]
+                            }
+                        # Artificial Intelligence
+                        elif puzzle_id == 2:
+                            clues = {
+                                "across": [
+                                    {"number": 1, "text": "Neural network type used for image processing", "row": 0, "col": 0, "len": 3},
+                                    {"number": 2, "text": "Machine processing of human languages", "row": 1, "col": 1, "len": 3}
+                                ],
+                                "down": [
+                                    {"number": 1, "text": "Popular generative AI model family", "row": 0, "col": 0, "len": 3},
+                                    {"number": 2, "text": "Deep Neural Network", "row": 0, "col": 3, "len": 3}
+                                ]
+                            }
+                        # St Andrews, Scotland
+                        elif puzzle_id == 3:
+                            clues = {
+                                "across": [
+                                    {"number": 1, "text": "St Andrews has ruins of a medieval one", "row": 0, "col": 0, "len": 6},
+                                    {"number": 2, "text": "Harbor structure in St Andrews", "row": 2, "col": 2, "len": 4},
+                                    {"number": 3, "text": "The famous '___ Course' in St Andrews", "row": 5, "col": 3, "len": 3}
+                                ],
+                                "down": [
+                                    {"number": 1, "text": "What many have done on the Old Course", "row": 0, "col": 3, "len": 6},
+                                    {"number": 2, "text": "North ___, body of water beside St Andrews", "row": 2, "col": 5, "len": 3}
+                                ]
+                            }
+                        
+                        # Update clues in puzzles table
+                        cursor.execute(
+                            "UPDATE puzzles SET clues = ? WHERE id = ?",
+                            (json.dumps(clues), puzzle_id)
+                        )
+                        conn.commit()
 
                     # Check if this is a system puzzle
                     is_system_puzzle = author == 'system'
@@ -512,7 +670,6 @@ class CrosswordServer:
                 )
                 
                 if time_taken is not None:
-<<<<<<< HEAD
                     # Calculate the rank among all solvers of this puzzle
                     cursor.execute(
                         """
@@ -533,13 +690,10 @@ class CrosswordServer:
                     total_solvers = total_result[0] if total_result else 0
                     
                     # Insert into puzzle_records
-=======
->>>>>>> main
                     cursor.execute(
                         "INSERT INTO puzzle_records (username, puzzle_id, time_taken) VALUES (?, ?, ?)",
                         (username, puzzle_id, time_taken)
                     )
-<<<<<<< HEAD
                     
                     # Insert into historical_rankings
                     cursor.execute(
@@ -563,11 +717,6 @@ class CrosswordServer:
                     }
                 else:
                     return {'status': 'ok', 'message': 'Correct answer!'}
-=======
-
-                conn.commit()
-                return {'status': 'ok', 'message': 'Correct answer!'}
->>>>>>> main
             else:
                 return {'status': 'error', 'message': 'Incorrect answer, please try again'}
                 
@@ -1006,7 +1155,6 @@ class CrosswordServer:
             print(f"Debug: Error in handle_get_messages: {str(e)}")
             return {'status': 'error', 'message': str(e)}
 
-<<<<<<< HEAD
     def handle_get_historical_rankings(self, request):
         """Handle fetching historical rankings for a user"""
         conn = get_db_connection()
@@ -1074,8 +1222,6 @@ class CrosswordServer:
         finally:
             conn.close()
 
-=======
->>>>>>> main
 
 if __name__ == "__main__":
     server = CrosswordServer()
