@@ -1,0 +1,71 @@
+506b99c | Yilei Xiao | 2025-04-25 | Update README.md
+1c48302 | Yilei Xiao | 2025-04-25 | Update README.md
+e3fc66e | Yilei Xiao | 2025-04-25 | Delete database/test_trigger.py
+84babfd | Yilei Xiao | 2025-04-25 | Restore server.py
+1dce910 | Yilei Xiao | 2025-04-25 | Restore init_db.py
+13c608d | Yilei Xiao | 2025-04-25 | Delete database/crossword.db
+e4b3d46 | Yilei Xiao | 2025-04-25 | Delete database/.DS_Store
+4546c7f | changchangw | 2025-04-25 | Merge branch 'main' of https://github.com/almightydon7/CS5003-P3-Crosswords
+110a19f | changchangw | 2025-04-25 | Add mode selection feature and unify button styling
+3bdea18 | changchangw | 2025-04-25 | Add mode selection feature and unify button styling
+12e5228 | Yilei Xiao | 2025-04-25 | Delete database.py
+7ec707f | Yilei Xiao | 2025-04-25 | Delete crossword_game.db
+f07835c | Yilei Xiao | 2025-04-25 | Delete database/crossword.db
+e72eacc | Yilei Xiao | 2025-04-25 | (240021230) (240016954) update database
+f0a43f0 | Yilei Xiao | 2025-04-25 | Merge branch 'main' into 240021230
+d61e9e0 | Yilei Xiao | 2025-04-25 | Update init_db.py
+9ff463e | Yilei Xiao | 2025-04-25 | Merge pull request #14
+57fc956 | Yilei Xiao | 2025-04-25 | Update server.py
+c3aaed9 | Yilei Xiao | 2025-04-25 | Merge pull request #11 from ShumengZhang7/240016954-database-update
+dc1e673 | Yilei Xiao | 2025-04-25 | Merge branch 'main' into 240016954-database-update
+8a69a19 | Yilei Xiao | 2025-04-25 | Delete Mock files
+d6da319 | Yilei Xiao | 2025-04-25 | Manage mock files used during client design
+0c8c43f | Yilei Xiao | 2025-04-25 | Delete pycache directory and Mac system files
+bd60afe | Yilei Xiao | 2025-04-25 | Delete .DS_Store
+4853d3d | Yilei Xiao | 2025-04-25 | Delete __pycache__ directory
+8a60c6c | yileiCS | 2025-04-25 | Merge branch '240021230' # Please enter a commit message to explain why this merge is necessary, # especially if it merges an updated upstream into a topic branch. # # Lines starting with '#' will be ignored, and an empty message aborts # the commit.
+da83598 | yileiCS | 2025-04-25 | Add .gitignore to ignore build artifacts and database file
+3b51249 | yileiCS | 2025-04-25 | (240021230)(240016954): add database foldes
+98b4971 | Yilei Xiao | 2025-04-25 | (240021230): Add README.md and resolve conflicts
+0b61b09 | yileiCS | 2025-04-25 | Keep our version, resolve conflict
+8eba0c5 | yileiCS | 2025-04-25 | (240021230): Add README.md and update server
+d39a57d | Yilei Xiao | 2025-04-25 | (240021230) Overall project description
+6e2a3aa | ShumengZhang | 2025-04-25 | Optimize init_db.py with improved structure and sample data logic
+b56e883 | changchangw | 2025-04-24 | Merge pull request #10 from almightydon7/client_cw
+f596b18 | changchangw | 2025-04-24 | Merge branch 'main' into client_cw
+d4d2806 | changchangw | 2025-04-24 | fix: resolve social feature bugs and puzzle clue display issue
+4e48626 | ShumengZhang | 2025-04-24 | Step 4: Added database triggers to auto-update stat fields
+1d7b890 | ShumengZhang | 2025-04-24 | Step 3: Structured visibleSquares into crossword_visible_squares table
+7f88b6a | ShumengZhang | 2025-04-24 | Step 2: Added structured crossword_words table for word positions
+36ab1f9 | ShumengZhang | 2025-04-24 | Step 1: Added structured clues table to replace JSON clues
+8898658 | changchangw | 2025-04-24 | Add social features and fix clue highlighting in puzzle view
+8a43490 | changchangw | 2025-04-23 | feat: support PUZ file import and enhance Add Puzzle interface
+40e0866 | changchangw | 2025-04-23 | feat: add leaderboard with fastest and average time display.
+5c13d67 | Yilei Xiao | 2025-04-22 | Add files via upload
+3bb9379 | Yilei Xiao | 2025-04-22 | Delete manager_db.py
+b337d5e | Yilei Xiao | 2025-04-22 | (240021230) Update manager_db.py
+46cd9c8 | Yilei Xiao | 2025-04-22 | (240021230) update
+1ad879e | Yilei Xiao | 2025-04-22 | Merge pull request #7 from almightydon7/update_db
+1469304 | Yilei Xiao | 2025-04-22 | (240021230) update
+45fbff1 | Yilei Xiao | 2025-04-20 | (240016954) Added RESTful API Support
+8c74f66 | Yilei Xiao | 2025-04-20 | (240016954) Merge RESTful API Support (in Database) to main
+2a93a5a | Yilei Xiao | 2025-04-20 | (240016954) Added RESTful API Support in Database
+d2e5f4d | Yilei Xiao | 2025-04-20 | (240021230) Delete the placeholder file for creating new folders [database]
+70088b2 | Yilei Xiao | 2025-04-20 | (240021230) Manage data-related files
+997d23f | Yilei Xiao | 2025-04-20 | (240021230) Manage data-related coding files
+ef46c31 | Yilei Xiao | 2025-04-20 | (240021230) Manage data-related files
+116857b | Yilei Xiao | 2025-04-20 | (240021230) Create Database Manager #5
+92d814d | Yilei Xiao | 2025-04-20 | (240021230) Create Database Manager
+9cb7ebb | Yilei Xiao | 2025-04-20 | (240021230) Update [init_db.py], merge to main
+2d43a75 | Yilei Xiao | 2025-04-20 | (240021230) Update [init_db.py]: Extended Database Architecture
+659d76e | LilyJuA | 2025-04-20 | Merge pull request #3 from almightydon7/wj31
+91c5b85 | changchangw | 2025-04-20 | copy code from wj31 to client_cw
+6a411c8 | 江文娟 | 2025-04-18 | I’ve built most of the main features for this project. To make sure the client-side code works properly, I also set up a mock server and database. These are just for testing and can be removed before the final submission. Right now, everything runs smoothly with the mock server and database in place. The following features have been implemented: 1.User Management：user registration (automatic registration: a new account is created upon first login), user login, user data storage (username, password, number of puzzles solved, number of puzzles created) 2.Puzzle Management: view puzzle list, view puzzle details, add new puzzles (including: title, grid layout, solution, and hints), submit puzzle answers, answer validation. 3.Statistics:personal stats: number of puzzles solved, number of puzzles created.Leaderboard: number of puzzles solved and created by all users.
+3b09367 | Yilei Xiao | 2025-04-18 | Merge pull request #2 from almightydon7/update_db
+ac90243 | Yilei Xiao | 2025-04-18 | Add files via upload
+952dac8 | Yilei Xiao | 2025-04-18 | Rename db_setup.py to init_db.py
+526f072 | almightydon7 | 2025-04-15 | Merge pull request #1 from yileiCS/patch-1
+0210f81 | Yilei Xiao | 2025-04-14 | Create db_setup.py
+cb2c3f5 | almightydon7 | 2025-04-09 | (240032527) Defined API interactions & set up the server with basic functionalities to login and retrieve crosswords.
+dcbcdcf | almightydon7 | 2025-04-09 | Add basic server script and README (240032527)
+1d94674 | almightydon7 | 2025-04-09 | Add server script (240032527)
