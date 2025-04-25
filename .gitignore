@@ -1,0 +1,4 @@
+/database/crossword.db
+.DS_Store
+__pycache__/
+database/crossword.db
