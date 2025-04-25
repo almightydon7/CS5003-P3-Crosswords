@@ -2,6 +2,11 @@ import sqlite3
 import json
 import os
 import time
+import hashlib
+
+# Hash the password using SHA-256
+def hash_password(password):
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 # Ensure the database directory exists
 os.makedirs(os.path.dirname(os.path.abspath(__file__)), exist_ok=True)
@@ -22,7 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
 )
 ''')
 
-# Create crosswords table with enhanced structure
+# Create crosswords table
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS crosswords (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +48,47 @@ CREATE TABLE IF NOT EXISTS crosswords (
 )
 ''')
 
-# Enhanced solutions table to track solving time
+# Create clues table
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS clues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    crossword_id INTEGER NOT NULL,
+    clue_text TEXT NOT NULL,
+    direction TEXT CHECK(direction IN ('across', 'down')),
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    answer TEXT NOT NULL,
+    FOREIGN KEY (crossword_id) REFERENCES crosswords(id)
+)
+''')
+
+# Create crossword_words table
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS crossword_words (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    crossword_id INTEGER NOT NULL,
+    word TEXT NOT NULL,
+    direction TEXT CHECK(direction IN ('across', 'down')),
+    start_x INTEGER NOT NULL,
+    start_y INTEGER NOT NULL,
+    end_x INTEGER NOT NULL,
+    end_y INTEGER NOT NULL,
+    FOREIGN KEY (crossword_id) REFERENCES crosswords(id)
+)
+''')
+
+# Create crossword_visible_squares table
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS crossword_visible_squares (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    crossword_id INTEGER NOT NULL,
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    FOREIGN KEY (crossword_id) REFERENCES crosswords(id)
+)
+''')
+
+# Create solutions table
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS solutions (
     user_id INTEGER,
@@ -57,7 +102,7 @@ CREATE TABLE IF NOT EXISTS solutions (
 )
 ''')
 
-# Create leaderboard table for fastest solvers
+# Create leaderboards table
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS leaderboards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +115,7 @@ CREATE TABLE IF NOT EXISTS leaderboards (
 )
 ''')
 
-# Create puzzle_attempts table to track all attempts
+# Create puzzle_attempts table
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS puzzle_attempts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,7 +131,7 @@ CREATE TABLE IF NOT EXISTS puzzle_attempts (
 )
 ''')
 
-# Create user_best_times table to store personal best times
+# Create user_best_times table
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS user_best_times (
     user_id INTEGER,
@@ -99,7 +144,7 @@ CREATE TABLE IF NOT EXISTS user_best_times (
 )
 ''')
 
-# Create puzzle_ratings table for user ratings
+# Create puzzle_ratings table
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS puzzle_ratings (
     user_id INTEGER,
@@ -124,6 +169,60 @@ CREATE TABLE IF NOT EXISTS historical_rankings (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (puzzle_id) REFERENCES crosswords(id)
+)
+''')
+
+# Create puzzle_records table for tracking puzzle solves
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS puzzle_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    puzzle_id INTEGER,
+    time_taken REAL,
+    solved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (username) REFERENCES users(username),
+    FOREIGN KEY (puzzle_id) REFERENCES crosswords(id)
+)
+''')
+
+# Create friends table for managing friend relationships
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS friends (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    friend_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(username),
+    FOREIGN KEY (friend_id) REFERENCES users(username)
+)
+''')
+
+# Create messages table for user messaging
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id TEXT NOT NULL,
+    receiver_id TEXT NOT NULL,
+    message TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    read BOOLEAN DEFAULT 0,
+    FOREIGN KEY (sender_id) REFERENCES users(username),
+    FOREIGN KEY (receiver_id) REFERENCES users(username)
+)
+''')
+
+# Create puzzles table that matches the server.py code
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS puzzles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL,
+    grid TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    clues TEXT NOT NULL,
+    times_solved INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 ''')
 
@@ -315,13 +414,46 @@ if count == 0:
         UPDATE crosswords SET times_solved = ? WHERE id = ?
         ''', (5, crossword_id))
 
-# Insert test user if it doesn't exist
 cursor.execute('''
 INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)
-''', ("test", "test"))
+''', ("test", hash_password("test")))
 
-# Commit and close the connection
+# Get admin user ID
+cursor.execute("SELECT id FROM users WHERE username = ?", ("admin",))
+admin_id = cursor.fetchone()[0]
+
+# Triggers
+cursor.executescript('''
+CREATE TRIGGER IF NOT EXISTS update_user_puzzles_solved
+AFTER INSERT ON solutions
+WHEN NEW.solve_time IS NOT NULL
+BEGIN
+    UPDATE users
+    SET puzzles_solved = puzzles_solved + 1
+    WHERE id = NEW.user_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS update_user_puzzles_created
+AFTER INSERT ON crosswords
+WHEN NEW.creator_id IS NOT NULL
+BEGIN
+    UPDATE users
+    SET puzzles_created = puzzles_created + 1
+    WHERE id = NEW.creator_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS update_crossword_times_solved
+AFTER INSERT ON solutions
+WHEN NEW.solve_time IS NOT NULL
+BEGIN
+    UPDATE crosswords
+    SET times_solved = times_solved + 1
+    WHERE id = NEW.puzzle_id;
+END;
+''')
+
+# Commit and close
 conn.commit()
 conn.close()
 
-print("Database initialized!✔️") 
+print("Database initialized!")
